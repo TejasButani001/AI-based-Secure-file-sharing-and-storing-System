@@ -106,7 +106,7 @@ export default function ForgotPassword() {
             </div>
             <Button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              className="translate-y-2 w-full text-muted-foreground hover:text-foreground"
               disabled={isLoading}
             >
               {isLoading ? "Sending..." : "Send Reset Link"}
