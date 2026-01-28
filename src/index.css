@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 175 80% 50%;
+    --primary-foreground: 222 47% 6%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 76% 45%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 6%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 17%;
+    --ring: 175 80% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 222 47% 7%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 175 80% 50%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 217 33% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 18%;
+    --sidebar-ring: 175 80% 50%;
+
+    /* Custom gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(175 80% 50%), hsl(200 80% 50%));
+    --gradient-card: linear-gradient(145deg, hsl(222 47% 10%), hsl(222 47% 6%));
+    --gradient-glow: radial-gradient(circle at 50% 0%, hsl(175 80% 50% / 0.15), transparent 50%);
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-xl;
+    box-shadow: 0 4px 24px -8px hsl(175 80% 50% / 0.1);
+  }
+
+  .glow-border {
+    position: relative;
+  }
+
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--gradient-primary);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+  }
+
+  .glow-border:hover::before {
+    opacity: 1;
+  }
+
+  .secure-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+    background: hsl(var(--success) / 0.15);
+    color: hsl(var(--success));
+    border: 1px solid hsl(var(--success) / 0.3);
+  }
+
+  .alert-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+    background: hsl(var(--destructive) / 0.15);
+    color: hsl(var(--destructive));
+    border: 1px solid hsl(var(--destructive) / 0.3);
+  }
+
+  .warning-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+    background: hsl(var(--warning) / 0.15);
+    color: hsl(var(--warning));
+    border: 1px solid hsl(var(--warning) / 0.3);
+  }
+
+  .stat-card {
+    @apply glass-card p-5 relative overflow-hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--gradient-primary);
+    opacity: 0.5;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes glow {
+    from {
+      box-shadow: 0 0 20px -10px hsl(175 80% 50% / 0.5);
+    }
+    to {
+      box-shadow: 0 0 30px -5px hsl(175 80% 50% / 0.7);
+    }
+  }
+}
