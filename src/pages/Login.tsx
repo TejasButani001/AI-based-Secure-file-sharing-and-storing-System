@@ -3,26 +3,36 @@ import { Link, useNavigate } from "react-router-dom";
 import { Shield, Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ModeToggle } from "@/components/mode-toggle";
+import { useAuth } from "@/context/AuthContext";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Assuming you have a Select component or use HTML select
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [role, setRole] = useState<"admin" | "user">("user"); // Default to user
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo login - navigate to dashboard
+    // Simulate login
+    // In a real app, this would be an API call returning the user and role
+    login(email || "Demo User", role);
     navigate("/dashboard");
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex relative">
+      <div className="absolute top-4 right-4 z-50">
+        <ModeToggle />
+      </div>
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-background" />
         <div className="absolute inset-0" style={{ background: "var(--gradient-glow)" }} />
-        
+
         <div className="relative z-10 flex flex-col justify-center p-12">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center animate-glow">
@@ -30,14 +40,14 @@ export default function Login() {
             </div>
             <span className="text-2xl font-bold text-foreground">SecureVault</span>
           </div>
-          
+
           <h1 className="text-4xl font-bold text-foreground mb-4">
             AI-Powered Security<br />
             <span className="text-primary">File Protection</span>
           </h1>
-          
+
           <p className="text-muted-foreground text-lg max-w-md">
-            Enterprise-grade encryption and machine learning intrusion detection 
+            Enterprise-grade encryption and machine learning intrusion detection
             to keep your files safe from unauthorized access.
           </p>
 
@@ -107,6 +117,23 @@ export default function Login() {
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
+                </div>
+              </div>
+
+              {/* Role Selection for Demo */}
+              <div>
+                <label className="text-sm text-muted-foreground mb-1.5 block">
+                  Select Role (Demo)
+                </label>
+                <div className="relative">
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as "admin" | "user")}
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
                 </div>
               </div>
 
