@@ -36,6 +36,21 @@ const upload = multer({ storage: storage });
 app.use(cors());
 app.use(express.json());
 
+
+// Middleware to authenticate token
+const authenticateToken = (req: any, res: Response, next: any) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.sendStatus(401);
+
+    jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
 // Health Check
 app.get('/api/health', async (req, res) => {
     try {
@@ -46,13 +61,12 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Stats API
-app.get('/api/stats', async (req, res) => {
+// Stats API - Global (Admin)
+app.get('/api/stats', authenticateToken, async (req, res) => {
     try {
         const userCount = await prisma.user.count();
         const fileCount = await prisma.file.count();
         const logCount = await prisma.systemLog.count();
-        // Mock connection health for now since we are running inside the app
         res.json({
             health: "Connected",
             users: userCount,
@@ -62,6 +76,54 @@ app.get('/api/stats', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: "Failed to fetch stats" });
+    }
+});
+
+// Stats API - User Specific
+app.get('/api/stats/me', authenticateToken, async (req: any, res) => {
+    try {
+        const userId = req.user.userId;
+        const fileCount = await prisma.file.count({ where: { ownerId: userId } });
+        // Calculate total size
+        const files = await prisma.file.findMany({ where: { ownerId: userId }, select: { size: true } });
+        const totalSize = files.reduce((acc, file) => acc + file.size, 0);
+
+        // Mock active users count (global) for now, or just send user's own session data if we had it
+        // For dashboard purposes, let's return some context
+
+        res.json({
+            files: fileCount,
+            storageUsed: totalSize,
+            activeUsers: 1, // Mock for now or real if we track sessions in DB
+            alerts: 0 // Mock alerts
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch user stats" });
+    }
+});
+
+// Recent Activity API
+app.get('/api/activity/recent', authenticateToken, async (req: any, res) => {
+    try {
+        const userId = req.user.userId;
+        // Fetch recent uploaded files as activity
+        const recentFiles = await prisma.file.findMany({
+            where: { ownerId: userId },
+            orderBy: { createdAt: 'desc' },
+            take: 5
+        });
+
+        const activities = recentFiles.map(file => ({
+            id: String(file.id),
+            type: 'upload',
+            message: `Uploaded ${file.filename}`,
+            user: 'You', // In a real shared activity log we'd show names
+            time: file.createdAt
+        }));
+
+        res.json(activities);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch activity' });
     }
 });
 
@@ -79,11 +141,51 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ userId: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
         res.json({ token, user: { email: user.email, role: user.role } });
 
     } catch (error) {
         res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Me API - Get current user info
+app.get('/api/auth/me', authenticateToken, async (req: any, res: any) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.userId },
+            select: { id: true, email: true, role: true, createdAt: true } // Don't return password
+        });
+        if (!user) return res.status(404).json({ error: "User not found" });
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch user' });
+    }
+});
+
+// Update Profile API
+app.put('/api/auth/me', authenticateToken, async (req: any, res: any) => {
+    const { email } = req.body; // Add name if schema supports it, currently schema only has email/password/role
+    try {
+        // Check if email is taken by another user
+        if (email) {
+            const existing = await prisma.user.findFirst({
+                where: {
+                    email: email,
+                    NOT: { id: req.user.userId }
+                }
+            });
+            if (existing) return res.status(400).json({ error: "Email already in use" });
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: req.user.userId },
+            data: { email },
+            select: { id: true, email: true, role: true }
+        });
+        res.json(updatedUser);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update profile' });
     }
 });
 
@@ -105,7 +207,7 @@ app.post('/api/auth/register', async (req, res): Promise<any> => {
             }
         });
 
-        const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ userId: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
         res.json({ token, user: { email: user.email, role: user.role } });
     } catch (error) {
         res.status(500).json({ error: 'Registration failed' });
@@ -131,19 +233,27 @@ app.post('/api/seed', async (req, res) => {
     }
 });
 
+// Get My Files API
+app.get('/api/files/my', authenticateToken, async (req: any, res) => {
+    try {
+        const files = await prisma.file.findMany({
+            where: { ownerId: req.user.userId },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(files);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch files' });
+    }
+});
+
 // Upload API
-// Note: In a real app, you'd use a middleware to verify the JWT token and get userId.
-// For this demo, we'll assume a dummy userId (e.g., 1) or pass it in body (insecure but simple for demo)
-app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) => {
+app.post('/api/files/upload', authenticateToken, upload.single('file'), async (req: any, res: any) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        // In real app, extract user from token. Here we mock or get from body if possible.
-        // For simplicity in this "connect database" task, we assign to the first user or admin (ID 1)
-        // You can improve this by rewriting the AuthContext/Login to send Authorization header
-        const ownerId = 1; // Default to Admin/First User
+        const ownerId = req.user.userId;
 
         const file = await prisma.file.create({
             data: {

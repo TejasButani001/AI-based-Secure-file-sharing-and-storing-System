@@ -47,8 +47,12 @@ export default function Upload() {
     formData.append("file", file);
 
     try {
+      const token = localStorage.getItem("token");
       const res = await fetch("/api/files/upload", {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        },
         body: formData,
         // Don't set Content-Type header, let browser set it with boundary for FormData
       });

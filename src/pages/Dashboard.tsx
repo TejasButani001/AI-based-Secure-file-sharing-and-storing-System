@@ -3,8 +3,35 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { SecurityStatus } from "@/components/dashboard/SecurityStatus";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
+import { useEffect, useState } from "react";
+import { formatBytes } from "@/lib/formatBytes";
 
 export default function Dashboard() {
+  const [stats, setStats] = useState({
+    files: 0,
+    storageUsed: 0,
+    activeUsers: 0,
+    alerts: 0
+  });
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("/api/stats/me", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setStats(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch dashboard stats", error);
+      }
+    };
+    fetchStats();
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8">
@@ -20,34 +47,34 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard
             title="Total Files"
-            value="1,284"
-            change="+12% from last month"
-            changeType="positive"
+            value={stats.files.toString()}
+            change="+0 from last month" // We don't track history yet
+            changeType="neutral"
             icon={FolderLock}
             iconColor="text-primary"
           />
           <StatCard
-            title="Active Users"
-            value="48"
-            change="3 new this week"
-            changeType="positive"
-            icon={Users}
+            title="Storage Used"
+            value={formatBytes(stats.storageUsed)}
+            change="Encrypted"
+            changeType="neutral"
+            icon={Activity}
             iconColor="text-accent"
           />
           <StatCard
             title="Alerts Today"
-            value="7"
-            change="-23% from yesterday"
-            changeType="positive"
+            value={stats.alerts.toString()}
+            change="No threats detected"
+            changeType="positive" // Assuming 0 is good
             icon={AlertTriangle}
             iconColor="text-warning"
           />
           <StatCard
-            title="File Activities"
-            value="342"
-            change="Last 24 hours"
-            changeType="neutral"
-            icon={Activity}
+            title="Active Session"
+            value="Active"
+            change="Secure connection"
+            changeType="positive"
+            icon={Users}
             iconColor="text-success"
           />
         </div>
@@ -56,8 +83,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SecurityStatus
             status="secure"
-            lastScan="2 minutes ago"
-            threatsBlocked={47}
+            lastScan="Just now"
+            threatsBlocked={0}
           />
           <RecentActivity />
         </div>

@@ -4,24 +4,46 @@ import { FileUpload } from "@/components/files/FileUpload";
 import { FileCard } from "@/components/files/FileCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { formatBytes } from "@/lib/formatBytes";
 
-const mockFiles = [
-  { id: "1", name: "financial_report_2024.pdf", type: "document" as const, size: "2.4 MB", uploadedAt: "Today, 2:30 PM", encrypted: true },
-  { id: "2", name: "project_specs.docx", type: "document" as const, size: "1.1 MB", uploadedAt: "Yesterday", encrypted: true },
-  { id: "3", name: "team_photo.jpg", type: "image" as const, size: "3.8 MB", uploadedAt: "Jan 25, 2024", encrypted: true },
-  { id: "4", name: "backup_2024.zip", type: "archive" as const, size: "128 MB", uploadedAt: "Jan 24, 2024", encrypted: true },
-  { id: "5", name: "client_data.xlsx", type: "document" as const, size: "540 KB", uploadedAt: "Jan 23, 2024", encrypted: true },
-  { id: "6", name: "presentation.pptx", type: "document" as const, size: "8.2 MB", uploadedAt: "Jan 22, 2024", encrypted: true },
-];
+interface FileData {
+  id: number;
+  filename: string;
+  size: number;
+  mimetype: string;
+  createdAt: string;
+}
 
 export default function Files() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const [files, setFiles] = useState<FileData[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredFiles = mockFiles.filter((file) =>
-    file.name.toLowerCase().includes(searchQuery.toLowerCase())
+  useEffect(() => {
+    const fetchFiles = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("/api/files/my", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFiles(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch files", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFiles();
+  }, []);
+
+  const filteredFiles = files.filter((file) =>
+    file.filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -94,13 +116,20 @@ export default function Files() {
           )}
         >
           {filteredFiles.map((file) => (
-            <FileCard key={file.id} {...file} />
+            <FileCard
+              key={file.id}
+              name={file.filename}
+              type={file.mimetype.includes("image") ? "image" : "document"}
+              size={formatBytes(file.size)}
+              uploadedAt={new Date(file.createdAt).toLocaleDateString()}
+              encrypted={true}
+            />
           ))}
         </div>
 
         {filteredFiles.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No files found</p>
+            <p className="text-muted-foreground">{loading ? "Loading..." : "No files found"}</p>
           </div>
         )}
       </div>
