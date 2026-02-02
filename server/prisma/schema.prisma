@@ -1,0 +1,35 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      String   @default("user") // "admin" | "user"
+  createdAt DateTime @default(now())
+  files     File[]
+}
+
+model File {
+  id        Int      @id @default(autoincrement())
+  filename  String
+  path      String
+  size      Int
+  mimetype  String
+  ownerId   Int
+  owner     User     @relation(fields: [ownerId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model SystemLog {
+  id        Int      @id @default(autoincrement())
+  level     String   // "info", "warning", "error", "critical"
+  message   String
+  timestamp DateTime @default(now())
+}

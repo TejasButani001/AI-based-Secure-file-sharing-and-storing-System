@@ -4,6 +4,8 @@ import { Shield, Mail, Lock, Eye, EyeOff, ArrowRight, User } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import { useAuth } from "@/context/AuthContext";
+
 export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -12,10 +14,39 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const { login } = useAuth(); // Assuming useAuth has login function we can reuse or just navigate
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo register - navigate to dashboard
-    navigate("/dashboard");
+    if (password !== confirmPassword) {
+      alert("Passwords do not match");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+
+      console.log("Registration success:", data);
+      localStorage.setItem("token", data.token);
+
+      // Auto-login after register
+      // Note: we might need to export login from useAuth or just navigate
+      // ideally useAuth should expose a method to set user state from token/data
+      navigate("/dashboard");
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      alert(error.message);
+    }
   };
 
   return (

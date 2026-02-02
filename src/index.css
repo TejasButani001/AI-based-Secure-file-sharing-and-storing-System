@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @layer base {
   :root {
@@ -16,7 +16,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
 
-    --primary: 175 80% 40%; /* Slightly darker teal for contrast on white */
+    --primary: 175 80% 40%;
+    /* Slightly darker teal for contrast on white */
     --primary-foreground: 0 0% 98%;
 
     --secondary: 240 4.8% 95.9%;
@@ -128,10 +129,13 @@
 @layer components {
   .glass-card {
     @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-xl;
-    box-shadow: 0 4px 24px -8px rgba(0,0,0,0.1); /* Neutral shadow */
+    box-shadow: 0 4px 24px -8px rgba(0, 0, 0, 0.1);
+    /* Neutral shadow */
   }
+
   .dark .glass-card {
-    box-shadow: 0 4px 24px -8px hsl(175 80% 50% / 0.1); /* Colored shadow in dark mode */
+    box-shadow: 0 4px 24px -8px hsl(175 80% 50% / 0.1);
+    /* Colored shadow in dark mode */
   }
 
   .glow-border {
@@ -207,6 +211,7 @@
     from {
       box-shadow: 0 0 20px -10px hsl(175 80% 50% / 0.5);
     }
+
     to {
       box-shadow: 0 0 30px -5px hsl(175 80% 50% / 0.7);
     }

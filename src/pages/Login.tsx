@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Shield, Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Shield, Mail, Lock, Eye, EyeOff, ArrowRight, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -15,16 +15,43 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login
-    // In a real app, this would be an API call returning the user and role
-    login(email || "Demo User", role);
-    navigate("/dashboard");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Login failed");
+      }
+
+      const data = await res.json();
+      console.log("Login success:", data);
+
+      // Store token (in real app, use secure storage or HttpOnly cookie)
+      localStorage.setItem("token", data.token);
+
+      login(data.user.email, data.user.role);
+      navigate("/dashboard");
+    } catch (error) {
+      console.error("Login error:", error);
+      alert("Invalid credentials (try admin@example.com / password123)");
+    }
   };
 
   return (
     <div className="min-h-screen flex relative">
+      <div className="absolute top-4 left-4 z-50">
+        <Link to="/">
+          <Button variant="ghost" className="gap-2">
+            <Home className="w-4 h-4" />
+            Home
+          </Button>
+        </Link>
+      </div>
       <div className="absolute top-4 right-4 z-50">
         <ModeToggle />
       </div>
