@@ -12,6 +12,7 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [role, setRole] = useState<"admin" | "user">("user");
   const navigate = useNavigate();
 
   const { login } = useAuth(); // Assuming useAuth has login function we can reuse or just navigate
@@ -27,7 +28,7 @@ export default function Register() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, role }), // Include role
       });
 
       const data = await res.json();
@@ -134,6 +135,22 @@ export default function Register() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="pl-10"
                 />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">
+                Account Type
+              </label>
+              <div className="relative">
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as "admin" | "user")}
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
             </div>
 

@@ -89,7 +89,7 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
 
 // Register API
 app.post('/api/auth/register', async (req, res): Promise<any> => {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body; // Extract role
     try {
         const existingUser = await prisma.user.findUnique({ where: { email } });
         if (existingUser) {
@@ -101,7 +101,7 @@ app.post('/api/auth/register', async (req, res): Promise<any> => {
             data: {
                 email,
                 password: hashedPassword,
-                role: 'user', // Default role
+                role: role || 'user', // Use provided role or default
             }
         });
 
@@ -156,9 +156,55 @@ app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) 
         });
 
         res.json({ message: 'File uploaded successfully', file });
+        // ... existing upload code ...
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Upload failed' });
+    }
+});
+
+// GET /api/files - List files
+app.get('/api/files', async (req, res) => {
+    try {
+        // In real app, filter by ownerId unless admin
+        const files = await prisma.file.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: { owner: { select: { email: true, role: true } } }
+        });
+        res.json(files);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch files" });
+    }
+});
+
+// GET /api/users - List users (Admin only in real app)
+app.get('/api/users', async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                createdAt: true,
+                _count: { select: { files: true } }
+            }
+        });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// GET /api/logs - List system logs (Admin only in real app)
+app.get('/api/logs', async (req, res) => {
+    try {
+        const logs = await prisma.systemLog.findMany({
+            orderBy: { timestamp: 'desc' },
+            take: 100
+        });
+        res.json(logs);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch logs" });
     }
 });
 

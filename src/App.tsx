@@ -10,14 +10,14 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import Files from "./pages/Files";
+
 import Alerts from "./pages/Alerts";
 import Activity from "./pages/Activity";
-import Users from "./pages/Users";
+
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import ForgotPassword from "./pages/ForgotPassword";
-import Upload from "./pages/Upload";
+
 import MyFiles from "./pages/MyFiles";
 import SharedFiles from "./pages/SharedFiles";
 import AuditLogs from "./pages/AuditLogs";
@@ -48,8 +48,8 @@ const App = () => (
 
               {/* Protected Routes - Common */}
               <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin", "user"]}><Dashboard /></ProtectedRoute>} />
-              <Route path="/files" element={<ProtectedRoute allowedRoles={["admin", "user"]}><Files /></ProtectedRoute>} />
-              <Route path="/upload" element={<ProtectedRoute allowedRoles={["admin", "user"]}><Upload /></ProtectedRoute>} />
+
+
               <Route path="/my-files" element={<ProtectedRoute allowedRoles={["admin", "user"]}><MyFiles /></ProtectedRoute>} />
               <Route path="/shared-files" element={<ProtectedRoute allowedRoles={["admin", "user"]}><SharedFiles /></ProtectedRoute>} />
               <Route path="/alerts" element={<ProtectedRoute allowedRoles={["admin", "user"]}><Alerts /></ProtectedRoute>} />
@@ -67,7 +67,7 @@ const App = () => (
               <Route path="/database-monitor" element={<ProtectedRoute allowedRoles={["admin"]}><DatabaseMonitor /></ProtectedRoute>} />
 
               {/* Legacy/Unused Routes or Catch-all */}
-              <Route path="/users" element={<ProtectedRoute allowedRoles={["admin"]}><Users /></ProtectedRoute>} />
+
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

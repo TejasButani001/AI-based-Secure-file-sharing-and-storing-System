@@ -3,8 +3,23 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { SecurityStatus } from "@/components/dashboard/SecurityStatus";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
+import { useEffect, useState } from "react";
 
 export default function Dashboard() {
+  const [stats, setStats] = useState({
+    files: 0,
+    users: 0,
+    logs: 0,
+    health: "Connected"
+  });
+
+  useEffect(() => {
+    fetch('/api/stats')
+      .then(res => res.json())
+      .then(data => setStats(data))
+      .catch(err => console.error("Failed to fetch stats", err));
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8">
@@ -20,7 +35,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard
             title="Total Files"
-            value="1,284"
+            value={stats.files.toString()}
             change="+12% from last month"
             changeType="positive"
             icon={FolderLock}
@@ -28,7 +43,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="Active Users"
-            value="48"
+            value={stats.users.toString()}
             change="3 new this week"
             changeType="positive"
             icon={Users}
@@ -36,16 +51,16 @@ export default function Dashboard() {
           />
           <StatCard
             title="Alerts Today"
-            value="7"
+            value="0"
             change="-23% from yesterday"
             changeType="positive"
             icon={AlertTriangle}
             iconColor="text-warning"
           />
           <StatCard
-            title="File Activities"
-            value="342"
-            change="Last 24 hours"
+            title="System Status"
+            value={stats.health}
+            change="Optimal"
             changeType="neutral"
             icon={Activity}
             iconColor="text-success"

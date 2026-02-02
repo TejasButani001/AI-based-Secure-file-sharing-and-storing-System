@@ -10,19 +10,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-const mockLogs = [
-  { id: "1", user: "john.doe@company.com", action: "File Upload", resource: "financial_report.pdf", ip: "192.168.1.45", time: "2024-01-27 14:32:15", status: "success" },
-  { id: "2", user: "sarah.m@company.com", action: "Login", resource: "-", ip: "192.168.1.67", time: "2024-01-27 14:28:42", status: "success" },
-  { id: "3", user: "mike.r@company.com", action: "File Download", resource: "project_specs.docx", ip: "192.168.1.89", time: "2024-01-27 14:15:33", status: "success" },
-  { id: "4", user: "unknown", action: "Login Attempt", resource: "-", ip: "45.33.32.156", time: "2024-01-27 14:10:22", status: "failed" },
-  { id: "5", user: "emily.k@company.com", action: "Password Change", resource: "-", ip: "192.168.1.23", time: "2024-01-27 13:55:18", status: "success" },
-  { id: "6", user: "john.doe@company.com", action: "File Share", resource: "team_photo.jpg", ip: "192.168.1.45", time: "2024-01-27 13:42:09", status: "success" },
-  { id: "7", user: "admin@company.com", action: "User Created", resource: "new_employee", ip: "192.168.1.10", time: "2024-01-27 13:30:00", status: "success" },
-  { id: "8", user: "unknown", action: "Login Attempt", resource: "-", ip: "185.220.101.42", time: "2024-01-27 13:15:45", status: "failed" },
-];
+import { useState, useEffect } from "react";
 
 export default function Activity() {
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/logs')
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error("Failed to fetch logs");
+      })
+      .then(data => setLogs(data))
+      .catch(err => console.error("Failed to fetch logs", err));
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8">
@@ -61,43 +63,46 @@ export default function Activity() {
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">User</TableHead>
                 <TableHead className="text-muted-foreground">Action</TableHead>
-                <TableHead className="text-muted-foreground">Resource</TableHead>
+                <TableHead className="text-muted-foreground">Details</TableHead>
                 <TableHead className="text-muted-foreground">IP Address</TableHead>
                 <TableHead className="text-muted-foreground">Time</TableHead>
                 <TableHead className="text-muted-foreground">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockLogs.map((log) => (
+              {logs.map((log) => (
                 <TableRow key={log.id} className="border-border">
                   <TableCell className="font-medium text-foreground">
-                    {log.user}
+                    {log.userId || "System"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {log.action}
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-sm">
-                    {log.resource}
+                    {log.details}
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-sm">
-                    {log.ip}
+                    {log.ipAddress || "-"}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {log.time}
+                    {new Date(log.timestamp).toLocaleString()}
                   </TableCell>
                   <TableCell>
                     <span
-                      className={
-                        log.status === "success"
-                          ? "secure-badge"
-                          : "alert-badge"
-                      }
+                      className="secure-badge"
                     >
-                      {log.status}
+                      Success
                     </span>
                   </TableCell>
                 </TableRow>
               ))}
+              {logs.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
+                    No logs found
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>

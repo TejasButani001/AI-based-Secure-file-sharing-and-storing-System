@@ -31,8 +31,8 @@ export function Sidebar() {
 
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", roles: ["admin", "user"] },
-    { icon: FolderLock, label: "All Files", path: "/files", roles: ["admin", "user"] }, // Renamed/Adjusted as commonly accessible or adjust logic
-    { icon: Upload, label: "Upload", path: "/upload", roles: ["admin", "user"] },
+
+
     { icon: FolderLock, label: "My Files", path: "/my-files", roles: ["admin", "user"] },
     { icon: Share2, label: "Shared Files", path: "/shared-files", roles: ["admin", "user"] },
     { icon: Bell, label: "Alerts", path: "/alerts", roles: ["admin", "user"] },
