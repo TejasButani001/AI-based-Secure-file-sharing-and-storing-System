@@ -1,35 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "sqlite"
   url      = "file:./dev.db"
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Users {
+  user_id       Int       @id @default(autoincrement())
+  username      String
+  email         String    @unique
+  password_hash String
+  role          String
+  status        String
+  created_at    DateTime  @default(now())
+  last_login    DateTime?
+
+  files                 Files[]                @relation("UserFiles")
+  fileAccessPermissions FileAccessPermission[]
+  loginLogs             LoginLogs[]
+  accessLogs            AccessLogs[]
+  alerts                Alerts[]
+  mlActivityData        MLActivityData[]
+  sessions              Sessions[]
+  auditTrails           AuditTrail[]
+  adminActions          AdminActions[]         @relation("AdminUser") // Actions performed BY this admin
+  targetedActions       AdminActions[]         @relation("TargetUser") // Actions TARGETING this user
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  role      String   @default("user") // "admin" | "user"
-  createdAt DateTime @default(now())
-  files     File[]
+model Files {
+  file_id           Int      @id @default(autoincrement())
+  file_name         String
+  encrypted_path    String
+  owner_id          Int
+  size              Int
+  upload_time       DateTime @default(now())
+  encryption_key_id Int? // Made optional as it wasn't strictly defined as a foreign key to a table in the prompt, assuming external or future table. If related to a specific table, relation needs to be added.
+  checksum          String
+
+  owner       Users                  @relation("UserFiles", fields: [owner_id], references: [user_id])
+  permissions FileAccessPermission[]
+  accessLogs  AccessLogs[]
 }
 
-model File {
-  id        Int      @id @default(autoincrement())
-  filename  String
-  path      String
-  size      Int
-  mimetype  String
-  ownerId   Int
-  owner     User     @relation(fields: [ownerId], references: [id])
-  createdAt DateTime @default(now())
+model FileAccessPermission {
+  permission_id Int    @id @default(autoincrement())
+  file_id       Int
+  user_id       Int
+  access_type   String
+
+  file Files @relation(fields: [file_id], references: [file_id])
+  user Users @relation(fields: [user_id], references: [user_id])
 }
 
-model SystemLog {
-  id        Int      @id @default(autoincrement())
-  level     String   // "info", "warning", "error", "critical"
-  message   String
+model LoginLogs {
+  log_id     Int      @id @default(autoincrement())
+  user_id    Int
+  ip_address String
+  login_time DateTime @default(now())
+  success    Boolean
+
+  user Users @relation(fields: [user_id], references: [user_id])
+}
+
+model AccessLogs {
+  access_id Int      @id @default(autoincrement())
+  user_id   Int
+  file_id   Int
+  action    String
   timestamp DateTime @default(now())
+
+  user Users @relation(fields: [user_id], references: [user_id])
+  file Files @relation(fields: [file_id], references: [file_id])
+}
+
+model Alerts {
+  alert_id    Int      @id @default(autoincrement())
+  user_id     Int
+  alert_type  String
+  risk_score  Float
+  description String
+  created_at  DateTime @default(now())
+  status      String
+
+  user Users @relation(fields: [user_id], references: [user_id])
+}
+
+model MLActivityData {
+  record_id       Int    @id @default(autoincrement())
+  user_id         Int
+  login_hour      Int
+  failed_attempts Int
+  file_count      Int
+  ip_change_count Int
+  label           String
+
+  user Users @relation(fields: [user_id], references: [user_id])
+}
+
+model Sessions {
+  session_id Int      @id @default(autoincrement())
+  user_id    Int
+  created_at DateTime @default(now())
+  expiry     DateTime
+
+  user Users @relation(fields: [user_id], references: [user_id])
+}
+
+model AuditTrail {
+  audit_id   Int      @id @default(autoincrement())
+  user_id    Int
+  event      String
+  event_time DateTime @default(now())
+  details    String
+
+  user Users @relation(fields: [user_id], references: [user_id])
+}
+
+model AdminActions {
+  action_id   Int      @id @default(autoincrement())
+  admin_id    Int
+  action      String
+  target_user Int
+  timestamp   DateTime @default(now())
+
+  admin  Users @relation("AdminUser", fields: [admin_id], references: [user_id])
+  target Users @relation("TargetUser", fields: [target_user], references: [user_id])
 }

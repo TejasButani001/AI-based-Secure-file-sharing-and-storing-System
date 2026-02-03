@@ -49,10 +49,10 @@ app.get('/api/health', async (req, res) => {
 // Stats API
 app.get('/api/stats', async (req, res) => {
     try {
-        const userCount = await prisma.user.count();
-        const fileCount = await prisma.file.count();
-        const logCount = await prisma.systemLog.count();
-        // Mock connection health for now since we are running inside the app
+        const userCount = await prisma.users.count();
+        const fileCount = await prisma.files.count();
+        // const logCount = await prisma.systemLog.count(); // systemLog table removed/renamed
+        const logCount = await prisma.auditTrail.count(); // Using AuditTrail as logs for now
         res.json({
             health: "Connected",
             users: userCount,
@@ -68,95 +68,97 @@ app.get('/api/stats', async (req, res) => {
 // Login API
 app.post('/api/auth/login', async (req, res): Promise<any> => {
     const { email, password } = req.body;
+    let user = null;
     try {
-        const user = await prisma.user.findUnique({ where: { email } });
+        user = await prisma.users.findUnique({ where: { email } });
+
+        // Log login attempt
+        const ip_address = req.ip || '0.0.0.0';
+
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const isValid = await bcrypt.compare(password, user.password);
+        const isValid = await bcrypt.compare(password, user.password_hash);
+
+        // Record log
+        await prisma.loginLogs.create({
+            data: {
+                user_id: user.user_id,
+                ip_address: String(ip_address),
+                success: isValid
+            }
+        });
+
         if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token, user: { email: user.email, role: user.role } });
+        // Update last login
+        await prisma.users.update({
+            where: { user_id: user.user_id },
+            data: { last_login: new Date() }
+        });
+
+        const token = jwt.sign({ userId: user.user_id, role: user.role, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
+        res.json({ token, user: { email: user.email, role: user.role, username: user.username } });
 
     } catch (error) {
+        console.error("Login error:", error);
         res.status(500).json({ error: 'Login failed' });
     }
 });
 
 // Register API
 app.post('/api/auth/register', async (req, res): Promise<any> => {
-    const { email, password, role } = req.body; // Extract role
+    const { email, password, role, username } = req.body;
     try {
-        const existingUser = await prisma.user.findUnique({ where: { email } });
+        const existingUser = await prisma.users.findUnique({ where: { email } });
         if (existingUser) {
             return res.status(400).json({ error: 'User already exists' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const user = await prisma.user.create({
+        const user = await prisma.users.create({
             data: {
                 email,
-                password: hashedPassword,
-                role: role || 'user', // Use provided role or default
+                username: username || email.split('@')[0], // Fallback if no username
+                password_hash: hashedPassword,
+                role: role || 'user',
+                status: 'active'
             }
         });
 
-        const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token, user: { email: user.email, role: user.role } });
+        const token = jwt.sign({ userId: user.user_id, role: user.role, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
+        res.json({ token, user: { email: user.email, role: user.role, username: user.username } });
     } catch (error) {
+        console.error("Register error:", error);
         res.status(500).json({ error: 'Registration failed' });
     }
 });
 
-// Seed endpoint (For demo purposes only - REMOVE IN PRODUCTION)
-app.post('/api/seed', async (req, res) => {
-    try {
-        const hashedPassword = await bcrypt.hash('password123', 10);
-        await prisma.user.upsert({
-            where: { email: 'admin@example.com' },
-            update: {},
-            create: {
-                email: 'admin@example.com',
-                password: hashedPassword,
-                role: 'admin'
-            }
-        });
-        res.json({ message: "Seeded admin user" });
-    } catch (e) {
-        res.status(500).json({ error: String(e) });
-    }
-});
-
 // Upload API
-// Note: In a real app, you'd use a middleware to verify the JWT token and get userId.
-// For this demo, we'll assume a dummy userId (e.g., 1) or pass it in body (insecure but simple for demo)
 app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        // In real app, extract user from token. Here we mock or get from body if possible.
-        // For simplicity in this "connect database" task, we assign to the first user or admin (ID 1)
-        // You can improve this by rewriting the AuthContext/Login to send Authorization header
-        const ownerId = 1; // Default to Admin/First User
+        // In real app, extract user from info. Here defaulting to ID 1 or first found
+        const firstUser = await prisma.users.findFirst();
+        const ownerId = firstUser ? firstUser.user_id : 1;
 
-        const file = await prisma.file.create({
+        const file = await prisma.files.create({
             data: {
-                filename: req.file.originalname,
-                path: req.file.path,
+                file_name: req.file.originalname,
+                encrypted_path: req.file.path,
                 size: req.file.size,
-                mimetype: req.file.mimetype,
-                ownerId: ownerId
+                checksum: "checksum_placeholder", // Implement actual checksum if needed
+                owner_id: ownerId
             }
         });
 
         res.json({ message: 'File uploaded successfully', file });
-        // ... existing upload code ...
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Upload failed' });
@@ -166,10 +168,9 @@ app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) 
 // GET /api/files - List files
 app.get('/api/files', async (req, res) => {
     try {
-        // In real app, filter by ownerId unless admin
-        const files = await prisma.file.findMany({
-            orderBy: { createdAt: 'desc' },
-            include: { owner: { select: { email: true, role: true } } }
+        const files = await prisma.files.findMany({
+            orderBy: { upload_time: 'desc' },
+            include: { owner: { select: { email: true, role: true, username: true } } }
         });
         res.json(files);
     } catch (error) {
@@ -177,15 +178,17 @@ app.get('/api/files', async (req, res) => {
     }
 });
 
-// GET /api/users - List users (Admin only in real app)
+// GET /api/users - List users
 app.get('/api/users', async (req, res) => {
     try {
-        const users = await prisma.user.findMany({
+        const users = await prisma.users.findMany({
             select: {
-                id: true,
+                user_id: true,
+                username: true,
                 email: true,
                 role: true,
-                createdAt: true,
+                created_at: true,
+                status: true,
                 _count: { select: { files: true } }
             }
         });
@@ -195,11 +198,11 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// GET /api/logs - List system logs (Admin only in real app)
+// GET /api/logs - List audit logs
 app.get('/api/logs', async (req, res) => {
     try {
-        const logs = await prisma.systemLog.findMany({
-            orderBy: { timestamp: 'desc' },
+        const logs = await prisma.auditTrail.findMany({
+            orderBy: { event_time: 'desc' },
             take: 100
         });
         res.json(logs);

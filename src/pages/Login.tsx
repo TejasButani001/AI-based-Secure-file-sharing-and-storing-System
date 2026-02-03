@@ -23,19 +23,20 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
 
-      if (!res.ok) {
-        // Try to parse error message, fall back to status text if not JSON
-        let errorMessage = "Login failed";
-        try {
-          const errorData = await res.json();
-          errorMessage = errorData.error || "Login failed";
-        } catch (e) {
-          errorMessage = `Server Error: ${res.status} ${res.statusText}`;
-        }
-        throw new Error(errorMessage);
+      const contentType = res.headers.get("content-type");
+      let data;
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        console.error("Non-JSON response:", text);
+        throw new Error(`Server returned non-JSON response: ${res.status} ${res.statusText}`);
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
       console.log("Login success:", data);
 
       // Store token (in real app, use secure storage or HttpOnly cookie)
@@ -45,7 +46,7 @@ export default function Login() {
       navigate("/dashboard");
     } catch (error: any) {
       console.error("Login error:", error);
-      alert(error.message || "Invalid credentials (try admin@example.com / password123)");
+      alert(error.message || "Invalid credentials");
     }
   };
 
