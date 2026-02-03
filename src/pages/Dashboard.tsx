@@ -15,9 +15,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetch('/api/stats')
-      .then(res => res.json())
+      .then(async res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          throw new Error('Invalid JSON response');
+        }
+      })
       .then(data => setStats(data))
-      .catch(err => console.error("Failed to fetch stats", err));
+      .catch(err => {
+        console.error("Failed to fetch stats:", err);
+        // Keep default/mock stats on error so UI doesn't break
+      });
   }, []);
 
   return (
