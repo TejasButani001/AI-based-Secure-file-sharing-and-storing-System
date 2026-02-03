@@ -24,7 +24,15 @@ export default function Login() {
       });
 
       if (!res.ok) {
-        throw new Error("Login failed");
+        // Try to parse error message, fall back to status text if not JSON
+        let errorMessage = "Login failed";
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || "Login failed";
+        } catch (e) {
+          errorMessage = `Server Error: ${res.status} ${res.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await res.json();
@@ -35,9 +43,9 @@ export default function Login() {
 
       login(data.user.email, data.user.role);
       navigate("/dashboard");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error);
-      alert("Invalid credentials (try admin@example.com / password123)");
+      alert(error.message || "Invalid credentials (try admin@example.com / password123)");
     }
   };
 
