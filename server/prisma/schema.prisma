@@ -3,8 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "sqlserver"
 }
 
 model Users {
@@ -50,8 +49,8 @@ model FileAccessPermission {
   user_id       Int
   access_type   String
 
-  file Files @relation(fields: [file_id], references: [file_id])
-  user Users @relation(fields: [user_id], references: [user_id])
+  file Files @relation(fields: [file_id], references: [file_id], onDelete: Cascade)
+  user Users @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model LoginLogs {
@@ -71,8 +70,8 @@ model AccessLogs {
   action    String
   timestamp DateTime @default(now())
 
-  user Users @relation(fields: [user_id], references: [user_id])
-  file Files @relation(fields: [file_id], references: [file_id])
+  user Users @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  file Files @relation(fields: [file_id], references: [file_id], onDelete: Cascade)
 }
 
 model Alerts {
@@ -125,6 +124,6 @@ model AdminActions {
   target_user Int
   timestamp   DateTime @default(now())
 
-  admin  Users @relation("AdminUser", fields: [admin_id], references: [user_id])
-  target Users @relation("TargetUser", fields: [target_user], references: [user_id])
+  admin  Users @relation("AdminUser", fields: [admin_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  target Users @relation("TargetUser", fields: [target_user], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 }

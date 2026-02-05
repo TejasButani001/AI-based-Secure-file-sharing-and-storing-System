@@ -2,16 +2,55 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+// import { db as prisma } from './mockDb'; // REMOVED
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import util from 'util';
+import { PrismaMssql } from '@prisma/adapter-mssql';
+import sql from 'mssql';
 
 dotenv.config();
 
 const app = express();
-const prisma = new PrismaClient();
+
+// Parse connection string for mssql driver
+const connectionString = process.env.DATABASE_URL || "";
+// Format: sqlserver://localhost:1433;database=SecureVault;user=Tejas;password=...
+const url = connectionString.replace('sqlserver://', '');
+const parts = url.split(';');
+const [serverPart, ...rest] = parts;
+const [server, portStr] = serverPart.split(':');
+
+const config = {
+    server,
+    port: portStr ? parseInt(portStr) : 1433,
+    user: '',
+    password: '',
+    database: '',
+    options: {
+        encrypt: true,
+        trustServerCertificate: true
+    }
+};
+
+rest.forEach(part => {
+    if (!part) return;
+    const [key, value] = part.split('=');
+    if (key === 'user') config.user = value;
+    if (key === 'password') config.password = value;
+    if (key === 'database') config.database = value;
+    if (key === 'trustServerCertificate') config.options.trustServerCertificate = value === 'true';
+    if (key === 'encrypt') config.options.encrypt = value === 'true';
+});
+
+console.log("Connection String:", connectionString);
+console.log("Parsed Config:", config);
+
+const adapter = new PrismaMssql(config);
+const prisma = new PrismaClient({ adapter });
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 
@@ -135,82 +174,113 @@ app.post('/api/auth/register', async (req, res): Promise<any> => {
         console.error("Register error:", error);
         res.status(500).json({ error: 'Registration failed' });
     }
-});
-
-// Upload API
-app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
+    // Get Current User API
+    app.get('/api/auth/me', async (req, res): Promise<any> => {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ error: 'No token provided' });
         }
 
-        // In real app, extract user from info. Here defaulting to ID 1 or first found
-        const firstUser = await prisma.users.findFirst();
-        const ownerId = firstUser ? firstUser.user_id : 1;
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET) as any;
+            const user = await prisma.users.findUnique({
+                where: { user_id: decoded.userId },
+                select: {
+                    user_id: true,
+                    username: true,
+                    email: true,
+                    role: true,
+                    created_at: true,
+                    last_login: true,
+                    status: true
+                }
+            });
 
-        const file = await prisma.files.create({
-            data: {
-                file_name: req.file.originalname,
-                encrypted_path: req.file.path,
-                size: req.file.size,
-                checksum: "checksum_placeholder", // Implement actual checksum if needed
-                owner_id: ownerId
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
             }
-        });
 
-        res.json({ message: 'File uploaded successfully', file });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Upload failed' });
-    }
-});
+            res.json(user);
+        } catch (error) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+    });
 
-// GET /api/files - List files
-app.get('/api/files', async (req, res) => {
-    try {
-        const files = await prisma.files.findMany({
-            orderBy: { upload_time: 'desc' },
-            include: { owner: { select: { email: true, role: true, username: true } } }
-        });
-        res.json(files);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch files" });
-    }
-});
-
-// GET /api/users - List users
-app.get('/api/users', async (req, res) => {
-    try {
-        const users = await prisma.users.findMany({
-            select: {
-                user_id: true,
-                username: true,
-                email: true,
-                role: true,
-                created_at: true,
-                status: true,
-                _count: { select: { files: true } }
+    // Upload API
+    app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ error: 'No file uploaded' });
             }
-        });
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch users" });
-    }
-});
 
-// GET /api/logs - List audit logs
-app.get('/api/logs', async (req, res) => {
-    try {
-        const logs = await prisma.auditTrail.findMany({
-            orderBy: { event_time: 'desc' },
-            take: 100
-        });
-        res.json(logs);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch logs" });
-    }
-});
+            // In real app, extract user from info. Here defaulting to ID 1 or first found
+            const firstUser = await prisma.users.findFirst();
+            const ownerId = firstUser ? firstUser.user_id : 1;
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+            const file = await prisma.files.create({
+                data: {
+                    file_name: req.file.originalname,
+                    encrypted_path: req.file.path,
+                    size: req.file.size,
+                    checksum: "checksum_placeholder", // Implement actual checksum if needed
+                    owner_id: ownerId
+                }
+            });
+
+            res.json({ message: 'File uploaded successfully', file });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ error: 'Upload failed' });
+        }
+    });
+
+    // GET /api/files - List files
+    app.get('/api/files', async (req, res) => {
+        try {
+            const files = await prisma.files.findMany({
+                orderBy: { upload_time: 'desc' },
+                include: { owner: { select: { email: true, role: true, username: true } } }
+            });
+            res.json(files);
+        } catch (error) {
+            res.status(500).json({ error: "Failed to fetch files" });
+        }
+    });
+
+    // GET /api/users - List users
+    app.get('/api/users', async (req, res) => {
+        try {
+            const users = await prisma.users.findMany({
+                select: {
+                    user_id: true,
+                    username: true,
+                    email: true,
+                    role: true,
+                    created_at: true,
+                    status: true,
+                    _count: { select: { files: true } }
+                }
+            });
+            res.json(users);
+        } catch (error) {
+            res.status(500).json({ error: "Failed to fetch users" });
+        }
+    });
+
+    // GET /api/logs - List audit logs
+    app.get('/api/logs', async (req, res) => {
+        try {
+            const logs = await prisma.auditTrail.findMany({
+                orderBy: { event_time: 'desc' },
+                take: 100
+            });
+            res.json(logs);
+        } catch (error) {
+            res.status(500).json({ error: "Failed to fetch logs" });
+        }
+    });
+
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+    });

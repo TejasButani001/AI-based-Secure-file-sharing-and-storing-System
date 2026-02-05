@@ -35,28 +35,36 @@ const mockActivity: ActivityItem[] = [
 
 export function RecentActivity() {
   return (
-    <div className="glass-card p-6 animate-fade-in">
-      <div className="flex items-center gap-3 mb-4">
-        <Activity className="w-5 h-5 text-primary" />
-        <h3 className="font-semibold text-foreground">Recent Activity</h3>
+    <div className="h-full p-6 rounded-3xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Activity className="w-5 h-5 text-primary" />
+          </div>
+          <h3 className="font-semibold text-lg text-foreground">Recent Activity</h3>
+        </div>
+        <button className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">View All</button>
       </div>
 
-      <div className="space-y-3">
-        {mockActivity.map((item) => {
+      <div className="space-y-4">
+        {mockActivity.map((item, index) => {
           const Icon = activityIcons[item.type];
           return (
             <div
               key={item.id}
-              className="flex items-start gap-3 p-3 rounded-lg hover:bg-secondary/30 transition-colors"
+              className="group flex items-start gap-4 p-3 rounded-xl hover:bg-secondary/50 transition-colors border border-transparent hover:border-border/50 cursor-default"
+              style={{ animationDelay: `${index * 100}ms` }}
             >
-              <div className={cn("p-2 rounded-lg", activityColors[item.type])}>
+              <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110", activityColors[item.type])}>
                 <Icon className="w-4 h-4" />
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-foreground truncate">{item.message}</p>
-                <p className="text-xs text-muted-foreground">
-                  {item.user} • {item.time}
-                </p>
+              <div className="flex-1 min-w-0 py-0.5">
+                <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{item.message}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-xs text-muted-foreground font-medium">{item.user}</p>
+                  <span className="text-[10px] text-muted-foreground/50">•</span>
+                  <p className="text-xs text-muted-foreground">{item.time}</p>
+                </div>
               </div>
             </div>
           );
