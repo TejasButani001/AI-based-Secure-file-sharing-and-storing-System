@@ -6,6 +6,7 @@ import { SecurityStatus } from "@/components/dashboard/SecurityStatus";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { authFetch } from "@/lib/authFetch";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -16,7 +17,7 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    fetch('/api/stats')
+    authFetch('/api/stats')
       .then(async res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const text = await res.text();

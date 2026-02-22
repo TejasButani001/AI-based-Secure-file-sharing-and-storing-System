@@ -17,6 +17,9 @@ import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import ForgotPassword from "./pages/ForgotPassword";
+import FAQ from "./pages/FAQ";
+import MLInfo from "./pages/MLInfo";
+import Contact from "./pages/Contact";
 
 import MyFiles from "./pages/MyFiles";
 import SharedFiles from "./pages/SharedFiles";
@@ -45,6 +48,9 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/faq" element={<FAQ />} />
+              <Route path="/ml-info" element={<MLInfo />} />
+              <Route path="/contact" element={<Contact />} />
 
               {/* Protected Routes - Common */}
               <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin", "user"]}><Dashboard /></ProtectedRoute>} />

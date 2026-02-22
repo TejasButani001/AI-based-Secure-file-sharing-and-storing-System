@@ -6,7 +6,8 @@
     "scripts": {
         "start": "ts-node src/index.ts",
         "dev": "nodemon src/index.ts",
-        "build": "tsc"
+        "build": "tsc",
+        "setup": "ts-node src/setupDatabase.ts"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.95.3",

@@ -10,12 +10,13 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useState, useEffect } from "react";
+import { authFetch } from "@/lib/authFetch";
 
 export default function ManageUsers() {
     const [users, setUsers] = useState<any[]>([]);
 
     useEffect(() => {
-        fetch('/api/users')
+        authFetch('/api/users')
             .then(res => {
                 if (res.ok) return res.json();
                 throw new Error("Failed to fetch");

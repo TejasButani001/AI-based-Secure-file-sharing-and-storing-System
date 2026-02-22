@@ -1,6 +1,7 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useEffect, useState } from "react";
 import { Activity, Database, FileText, Users, Server } from "lucide-react";
+import { authFetch } from "@/lib/authFetch";
 
 interface DbStats {
     health: string;
@@ -18,7 +19,7 @@ export default function DatabaseMonitor() {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const res = await fetch("/api/stats");
+                const res = await authFetch("/api/stats");
                 if (!res.ok) throw new Error("Failed to fetch stats");
                 const data = await res.json();
                 setStats(data);

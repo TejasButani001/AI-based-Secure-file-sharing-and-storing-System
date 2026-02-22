@@ -11,12 +11,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useState, useEffect } from "react";
+import { authFetch } from "@/lib/authFetch";
 
 export default function Activity() {
   const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/logs')
+    authFetch('/api/logs')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error("Failed to fetch logs");

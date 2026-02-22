@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import { authMiddleware, adminOnly, AuthRequest } from './middleware';
 
 dotenv.config();
 
@@ -54,8 +55,8 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Stats API
-app.get('/api/stats', async (req, res) => {
+// Stats API (admin only)
+app.get('/api/stats', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
     try {
         const { count: userCount, error: userError } = await supabase.from('users').select('*', { count: 'exact', head: true });
         const { count: fileCount, error: fileError } = await supabase.from('files').select('*', { count: 'exact', head: true });
@@ -171,8 +172,8 @@ app.get('/api/auth/me', async (req, res): Promise<any> => {
     }
 });
 
-// Upload API
-app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) => {
+// Upload API (any logged-in user)
+app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req: any, res: any) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
@@ -207,8 +208,8 @@ app.post('/api/files/upload', upload.single('file'), async (req: any, res: any) 
     }
 });
 
-// GET /api/files - List files
-app.get('/api/files', async (req, res) => {
+// GET /api/files - List files (any logged-in user)
+app.get('/api/files', authMiddleware, async (req: AuthRequest, res) => {
     try {
         // We want to include owner info. Supabase requires setting up foreign key relationship in Supabase console/schema.
         // Assuming relationship is established and named 'USERS'.
@@ -225,8 +226,8 @@ app.get('/api/files', async (req, res) => {
     }
 });
 
-// GET /api/users - List users
-app.get('/api/users', async (req, res) => {
+// GET /api/users - List users (admin only)
+app.get('/api/users', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
     try {
         // Manual count of files per user could be expensive or complex with Supabase directly in one query if not using views/functions.
         // Simple approach: Get users, then maybe get file counts or just ignore count for now if tricky.
@@ -248,8 +249,8 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// GET /api/logs - List audit logs
-app.get('/api/logs', async (req, res) => {
+// GET /api/logs - List audit logs (admin only)
+app.get('/api/logs', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
     try {
         const { data: logs, error } = await supabase
             .from('audit_trail')

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { authFetch } from "@/lib/authFetch";
 
 interface FileData {
     id: string;
@@ -27,7 +28,7 @@ export default function MyFiles() {
 
     const fetchFiles = async () => {
         try {
-            const res = await fetch('/api/files');
+            const res = await authFetch('/api/files');
             if (res.ok) {
                 const data = await res.json();
                 // Map backend data to frontend model
