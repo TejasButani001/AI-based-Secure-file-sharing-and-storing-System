@@ -61,3 +61,27 @@ Successfully restored the application to a fully functional state and executed a
 ## Current Status
 -   **Frontend**: Running on `http://localhost:8080` (New Design Live).
 -   **Backend**: Running on `http://localhost:3001` (Connected to Supabase).
+
+
+# Daily Changes Summary - 2026-02-22
+
+## 🎨 UI/UX Redesign
+- **Landing Page Overhaul**: Completely redesigned the landing page (`Index.tsx`) with rich cybersecurity-themed animations using Framer Motion and pure CSS/SVG visuals (Animated Shield Lock, Cloud Shield, and Live Dashboard Mockup).
+- **Consolidated Button Styles**: Simplified all button hover effects across the site to use a subtle background/opacity tint (`hover:bg-secondary/50`), creating a cleaner and more unified interface.
+- **Background Effects**: Added floating cybersecurity icons and particle effects to the landing page background for a premium feel.
+
+## 📄 New Pages & Features
+- **FAQ Page**: Created a dedicated `FAQ.tsx` page featuring 15 comprehensive questions about system security, encryption, and AI detection with an interactive accordion layout.
+- **ML Info Page**: Developed a deep-dive page (`MLInfo.tsx`) explaining the Machine Learning pipeline, algorithms used, and threat detection capabilities.
+- **Contact Page**: Added a `Contact.tsx` page with contact information cards and a functional contact form with submission feedback.
+- **How It Works**: Integrated a new 4-step process section on the landing page to clearly communicate the user journey.
+
+## 🔗 Navigation & Routing
+- **Updated Navbar**: Added links to FAQ, ML Info, and Contact pages in both desktop and mobile navigation menus.
+- **Footer Updates**: Enhanced the footer with categorized links to new pages and product sections.
+- **Routing**: Configured all new pages in `App.tsx` using `react-router-dom`.
+
+## 🛠️ File Management (Experimental)
+- Added description field support to the File Upload UI.
+- Improved `MyFiles` page layout with support for grid/list toggle and enhanced file cards.
+- *Note: Some functional backend integrations for file handling were explored and are ready for further development.*
