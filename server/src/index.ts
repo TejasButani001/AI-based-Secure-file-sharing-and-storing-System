@@ -39,7 +39,30 @@ const storage = multer.diskStorage({
         cb(null, uniqueSuffix + '-' + file.originalname);
     }
 });
-const upload = multer({ storage: storage });
+// Allowed File Types
+const allowedMimeTypes = [
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+    'text/plain',
+    'application/msword', 
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' // xlsx
+];
+
+const upload = multer({ 
+    storage: storage,
+    limits: {
+        fileSize: 30 * 1024 * 1024 // 30 MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (allowedMimeTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`Invalid file type: ${file.mimetype}. Only images, PDFs, and standard documents are allowed.`));
+        }
+    }
+});
 
 app.use(cors());
 app.use(express.json());
@@ -55,20 +78,64 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Stats API (admin only)
-app.get('/api/stats', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+// Stats API (accessible by any logged-in user, but data is scoped)
+app.get('/api/stats', authMiddleware, async (req: AuthRequest, res) => {
     try {
-        const { count: userCount, error: userError } = await supabase.from('users').select('*', { count: 'exact', head: true });
-        const { count: fileCount, error: fileError } = await supabase.from('files').select('*', { count: 'exact', head: true });
-        const { count: logCount, error: logError } = await supabase.from('audit_trail').select('*', { count: 'exact', head: true });
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
 
-        if (userError || fileError || logError) throw new Error("Database error fetching stats");
+        const isAdmin = req.user.role === 'admin';
+
+        // For non-admins, we only care about their own files
+        let fileCountQuery = supabase.from('files').select('*', { count: 'exact', head: true });
+        if (!isAdmin) {
+            fileCountQuery = fileCountQuery.eq('owner_id', req.user.userId);
+        }
+        
+        const { count: userFileCount, error: fileError } = await fileCountQuery;
+        const finalFileCount = fileError ? 0 : (userFileCount || 0);
+
+        let alertsCountQuery = supabase.from('alerts').select('*', { count: 'exact', head: true });
+        if (!isAdmin) {
+            alertsCountQuery = alertsCountQuery.eq('user_id', req.user.userId);
+        }
+        const { count: userAlertsCount, error: alertError } = await alertsCountQuery;
+        const finalAlertsCount = alertError ? 0 : (userAlertsCount || 0);
+
+        // If admin, we count everything. If user, we just show their file count and maybe 1 for 'users' (themselves)
+        let finalUserCount = 1;
+        let finalLogsCount = 0;
+        let finalThreatsCount = finalAlertsCount; // Use their alerts as "threats blocked" or alerts logic 
+        const counts: Record<string, number> = { files: finalFileCount, alerts: finalAlertsCount };
+
+        if (isAdmin) {
+            const tables = [
+                'users', 'file_access_permission', 'login_logs', 
+                'access_logs', 'alerts', 'ml_activity_data', 'sessions', 
+                'audit_trail', 'admin_actions'
+            ];
+            
+            for (const table of tables) {
+                const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true });
+                if (error) {
+                    console.error(`Error fetching count for ${table}:`, error);
+                    counts[table] = 0;
+                } else {
+                    counts[table] = count || 0;
+                }
+            }
+            finalUserCount = counts['users'] || 1;
+            finalLogsCount = counts['audit_trail'] || 0;
+        }
 
         res.json({
             health: "Connected",
-            users: userCount || 0,
-            files: fileCount || 0,
-            logs: logCount || 0,
+            users: finalUserCount,
+            files: finalFileCount,
+            alerts: finalThreatsCount,
+            logs: finalLogsCount, // legacy mapping
+            table_counts: counts,
             uptime: process.uptime()
         });
     } catch (error) {
@@ -173,50 +240,66 @@ app.get('/api/auth/me', async (req, res): Promise<any> => {
 });
 
 // Upload API (any logged-in user)
-app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req: any, res: any) => {
+app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req: AuthRequest, res: any) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        // In real app, extract user from info. Defaulting to first user for demo if not auth'd context available in this snippet
-        // ideally we get user from token. For strict types we should use middleware.
-        // Let's try to get a user ID from a default query or token if we had middleware.
-        // For now, getting the first user ID to be safe or 1.
-        const { data: firstUser } = await supabase.from('users').select('user_id').limit(1).single();
-        const ownerId = firstUser ? firstUser.user_id : null;
+        const description = req.body.description || '';
+
+        // Extract user ID securely from the decoded JWT token provided by authMiddleware
+        const ownerId = req.user?.userId;
 
         if (!ownerId) {
-            return res.status(500).json({ error: 'No users found to assign file to' });
+            return res.status(401).json({ error: 'Unauthorized: No user ID attached to session' });
         }
 
-        const { data: file, error } = await supabase.from('files').insert({
+        // We attempt to insert description. If it fails due to missing column, we fallback to without it.
+        // It's better to ensure the schema has description: `ALTER TABLE files ADD COLUMN description TEXT;`
+        let insertData: any = {
             file_name: req.file.originalname,
             encrypted_path: req.file.path,
             size: req.file.size,
             checksum: "checksum_placeholder",
             owner_id: ownerId,
             upload_time: new Date().toISOString()
-        }).select().single();
+        };
 
-        if (error) throw error;
+        // Try to add description if column was successfully created by admin
+        try {
+            insertData.description = description;
+            const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
+            if (error) throw error;
+            return res.json({ message: 'File uploaded successfully', file });
+        } catch (e: any) {
+            // Fallback if description column doesn't exist yet
+            delete insertData.description;
+            const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
+            if (error) throw error;
+            return res.json({ message: 'File uploaded successfully (without description)', file });
+        }
 
-        res.json({ message: 'File uploaded successfully', file });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Upload failed' });
     }
 });
 
-// GET /api/files - List files (any logged-in user)
+// GET /api/files - List files (scoped to logged-in user, or all if admin)
 app.get('/api/files', authMiddleware, async (req: AuthRequest, res) => {
     try {
-        // We want to include owner info. Supabase requires setting up foreign key relationship in Supabase console/schema.
-        // Assuming relationship is established and named 'USERS'.
-        const { data: files, error } = await supabase
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        let query = supabase
             .from('files')
             .select('*, owner:users(email, role, username)')
+            .eq('owner_id', req.user.userId)
             .order('upload_time', { ascending: false });
+
+        const { data: files, error } = await query;
 
         if (error) throw error;
         res.json(files);

@@ -18,8 +18,21 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
         headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     }
 
-    return fetch(url, {
+    const response = await fetch(url, {
         ...options,
         headers,
     });
+
+    // Automatically handle expired or invalid tokens globally
+    if (response.status === 401) {
+        // Only clear if we actually had a token that is now rejected
+        if (token) {
+            console.warn("API returned 401 Unauthorized. Clearing session.");
+            localStorage.removeItem('token');
+            // Dispatch a custom event so AuthContext or App can react (e.g. redirect to login)
+            window.dispatchEvent(new Event('auth:unauthorized'));
+        }
+    }
+
+    return response;
 }

@@ -7,11 +7,16 @@ import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { authFetch } from "@/lib/authFetch";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [stats, setStats] = useState({
     files: 0,
     users: 0,
+    alerts: 0,
     logs: 0,
     health: "Connected"
   });
@@ -84,24 +89,37 @@ export default function Dashboard() {
                 iconColor="text-blue-500"
               />
             </motion.div>
-            <motion.div variants={item}>
-              <StatCard
-                title="Active Users"
-                value={stats.users.toString()}
-                change="3 new this week"
-                changeType="positive"
-                icon={Users}
-                iconColor="text-purple-500"
-              />
-            </motion.div>
+            {isAdmin ? (
+              <motion.div variants={item}>
+                <StatCard
+                  title="Active Users"
+                  value={stats.users.toString()}
+                  change="System wide"
+                  changeType="neutral"
+                  icon={Users}
+                  iconColor="text-purple-500"
+                />
+              </motion.div>
+            ) : (
+                <motion.div variants={item}>
+                <StatCard
+                  title="Account Status"
+                  value="Active"
+                  change={`Role: ${user?.role || 'User'}`}
+                  changeType="positive"
+                  icon={Users}
+                  iconColor="text-purple-500"
+                />
+              </motion.div>
+            )}
             <motion.div variants={item}>
               <StatCard
                 title="Alerts Today"
-                value="0"
-                change="-23% from yesterday"
-                changeType="positive"
+                value={stats.alerts?.toString() || "0"}
+                change={stats.alerts > 0 ? "Requires Attention" : "All clear"}
+                changeType={stats.alerts > 0 ? "negative" : "positive"}
                 icon={AlertTriangle}
-                iconColor="text-amber-500"
+                iconColor={stats.alerts > 0 ? "text-amber-500" : "text-success"}
               />
             </motion.div>
             <motion.div variants={item}>
@@ -120,9 +138,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
             <motion.div variants={item} className="h-full">
               <SecurityStatus
-                status="secure"
-                lastScan="2 minutes ago"
-                threatsBlocked={47}
+                status={stats.alerts > 0 ? "warning" : "secure"}
+                lastScan="Just now"
+                threatsBlocked={stats.alerts || 0}
               />
             </motion.div>
             <motion.div variants={item} className="h-full">

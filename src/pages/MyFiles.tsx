@@ -33,14 +33,16 @@ export default function MyFiles() {
                 const data = await res.json();
                 // Map backend data to frontend model
                 const mappedFiles = data.map((f: any) => ({
-                    id: f.id,
-                    name: f.filename,
+                    id: f.file_id || f.id,
+                    name: f.file_name || f.filename || 'Unknown File',
                     type: "document", // Simplified type mapping
-                    size: (f.size / 1024).toFixed(1) + " KB",
-                    uploadedAt: new Date(f.createdAt).toLocaleDateString(),
+                    size: ((f.size || 0) / 1024).toFixed(1) + " KB",
+                    uploadedAt: new Date(f.upload_time || f.createdAt || new Date()).toLocaleDateString(),
                     encrypted: true
                 }));
                 setFiles(mappedFiles);
+            } else {
+                console.error("Failed to fetch files:", res.statusText);
             }
         } catch (error) {
             console.error("Failed to fetch files", error);
@@ -48,7 +50,7 @@ export default function MyFiles() {
     };
 
     const filteredFiles = files.filter((file) =>
-        file.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (file.name || "").toLowerCase().includes((searchQuery || "").toLowerCase())
     );
 
     return (

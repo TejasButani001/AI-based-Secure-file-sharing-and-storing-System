@@ -1,5 +1,7 @@
-import { Activity, Upload, Download, LogIn, AlertTriangle, Shield } from "lucide-react";
+import { Activity, Upload, Download, LogIn, AlertTriangle, Shield, File } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { authFetch } from "@/lib/authFetch";
 
 interface ActivityItem {
   id: string;
@@ -34,6 +36,34 @@ const mockActivity: ActivityItem[] = [
 ];
 
 export function RecentActivity() {
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchActivities = async () => {
+      try {
+        const res = await authFetch('/api/files');
+        if (res.ok) {
+          const files = await res.json();
+          // Map real files to activity items
+          const mapped: ActivityItem[] = files.slice(0, 5).map((f: { file_id?: string; id?: string; file_name?: string; filename?: string; upload_time: string }) => ({
+            id: f.file_id || f.id || Math.random().toString(),
+            type: "upload",
+            message: `Uploaded ${f.file_name || f.filename || 'file'}`,
+            user: "You",
+            time: new Date(f.upload_time).toLocaleDateString()
+          }));
+          setActivities(mapped);
+        }
+      } catch (error) {
+        console.error("Failed to fetch activity:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchActivities();
+  }, []);
+
   return (
     <div className="h-full p-6 rounded-3xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between mb-6">
@@ -47,28 +77,34 @@ export function RecentActivity() {
       </div>
 
       <div className="space-y-4">
-        {mockActivity.map((item, index) => {
-          const Icon = activityIcons[item.type];
-          return (
-            <div
-              key={item.id}
-              className="group flex items-start gap-4 p-3 rounded-xl hover:bg-secondary/50 transition-colors border border-transparent hover:border-border/50 cursor-default"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110", activityColors[item.type])}>
-                <Icon className="w-4 h-4" />
-              </div>
-              <div className="flex-1 min-w-0 py-0.5">
-                <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{item.message}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-xs text-muted-foreground font-medium">{item.user}</p>
-                  <span className="text-[10px] text-muted-foreground/50">•</span>
-                  <p className="text-xs text-muted-foreground">{item.time}</p>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading activity...</p>
+        ) : activities.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No recent activity found.</p>
+        ) : (
+          activities.map((item, index) => {
+            const Icon = activityIcons[item.type] || File;
+            return (
+              <div
+                key={item.id}
+                className="group flex items-start gap-4 p-3 rounded-xl hover:bg-secondary/50 transition-colors border border-transparent hover:border-border/50 cursor-default"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110", activityColors[item.type] || activityColors.upload)}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0 py-0.5">
+                  <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{item.message}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs text-muted-foreground font-medium">{item.user}</p>
+                    <span className="text-[10px] text-muted-foreground/50">•</span>
+                    <p className="text-xs text-muted-foreground">{item.time}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

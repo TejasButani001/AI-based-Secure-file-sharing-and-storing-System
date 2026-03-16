@@ -66,8 +66,8 @@ export function Sidebar() {
       {/* Logo */}
       <div className={cn("h-20 flex items-center px-4 border-b border-sidebar-border/50", collapsed ? "justify-center" : "justify-between")}>
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20 shrink-0">
-            <Shield className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20 shrink-0 uppercase font-bold text-white">
+            {user?.name ? user.name.substring(0, 2) : <Shield className="w-5 h-5 text-white" />}
           </div>
           <AnimatePresence mode="wait">
             {!collapsed && (

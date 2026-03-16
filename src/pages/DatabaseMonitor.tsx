@@ -9,6 +9,7 @@ interface DbStats {
     files: number;
     logs: number;
     uptime: number;
+    table_counts?: Record<string, number>;
 }
 
 export default function DatabaseMonitor() {
@@ -72,6 +73,23 @@ export default function DatabaseMonitor() {
                         subtext="System Events"
                     />
                 </div>
+
+                {stats?.table_counts && (
+                    <div className="bg-card rounded-lg border border-border p-6 shadow-sm mb-8">
+                        <div className="flex items-center gap-2 mb-6">
+                            <Database className="w-5 h-5 text-purple-500" />
+                            <h2 className="text-lg font-semibold text-foreground">All Tables Overview</h2>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                            {Object.entries(stats.table_counts).map(([tableName, count]) => (
+                                <div key={tableName} className="p-4 bg-background rounded-lg border border-border">
+                                    <h3 className="text-xs font-mono text-muted-foreground mb-1">{tableName}</h3>
+                                    <p className="text-xl font-bold text-foreground">{count}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
                     <div className="flex items-center gap-2 mb-4">
