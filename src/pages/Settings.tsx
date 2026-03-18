@@ -1,4 +1,4 @@
-import { Shield, Bell, Lock, Key } from "lucide-react";
+import { Shield, Bell, Lock } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,32 +132,6 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* API Keys */}
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Key className="w-5 h-5 text-primary" />
-              <h2 className="font-semibold text-foreground">API Keys</h2>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-muted-foreground mb-1.5 block">
-                  API Key
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    value="sv_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    readOnly
-                    className="font-mono text-sm"
-                  />
-                  <Button variant="outline">Copy</Button>
-                </div>
-              </div>
-              <Button variant="outline">
-                Generate New Key
-              </Button>
-            </div>
-          </div>
 
           {/* Save Button */}
           <div className="flex justify-end">
