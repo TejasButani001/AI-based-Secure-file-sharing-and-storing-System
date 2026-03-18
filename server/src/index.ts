@@ -8,6 +8,8 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { authMiddleware, adminOnly, AuthRequest } from './middleware';
+import { OAuth2Client } from 'google-auth-library';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -20,8 +22,95 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const app = express();
-const PORT = process.env.PORT || 3001; // Changed to 3001 to avoid conflicts if 3000 is taken, or keep logic
+const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Email Transporter Configuration
+console.log('[EMAIL CONFIG] Initializing email transporter...');
+console.log('[EMAIL CONFIG] Service:', process.env.EMAIL_SERVICE);
+console.log('[EMAIL CONFIG] User:', process.env.EMAIL_USER);
+console.log('[EMAIL CONFIG] Password exists:', !!process.env.EMAIL_PASSWORD);
+console.log('[EMAIL CONFIG] App Name:', process.env.APP_NAME);
+console.log('[EMAIL CONFIG] App Domain:', process.env.APP_DOMAIN);
+
+const transporter = nodemailer.createTransport({
+    service: process.env.EMAIL_SERVICE || 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+    }
+});
+
+// Test transporter connection
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('[EMAIL ERROR] Transporter verification failed:', error.message);
+        console.error('[EMAIL ERROR] Details:', error);
+    } else {
+        console.log('[EMAIL SUCCESS] Mail server is ready to take messages');
+        console.log('[EMAIL SUCCESS] Sender email:', process.env.EMAIL_USER);
+    }
+});
+
+// Function to send registration email
+const sendRegistrationEmail = async (email: string, username: string, appName: string) => {
+    try {
+        console.log(`[EMAIL] ===== SENDING EMAIL =====`);
+        console.log(`[EMAIL] To: ${email}`);
+        console.log(`[EMAIL] From: ${process.env.EMAIL_USER}`);
+        console.log(`[EMAIL] Username: ${username}`);
+        console.log(`[EMAIL] App Name: ${appName}`);
+        
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: `Welcome to ${appName}!`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+                        <h1 style="color: white; margin: 0;">Welcome to ${appName}!</h1>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+                        <p style="color: #333; font-size: 16px;">Hello <strong>${username}</strong>,</p>
+                        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+                            Thank you for registering with us! Your account has been successfully created.
+                        </p>
+                        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+                            You can now log in with your email and password to access all features of our secure file sharing system.
+                        </p>
+                        <div style="background: white; padding: 20px; border-left: 4px solid #667eea; margin: 20px 0;">
+                            <p style="color: #333; margin-top: 0;"><strong>Registration Details:</strong></p>
+                            <p style="color: #666; margin: 5px 0;">Email: <strong>${email}</strong></p>
+                            <p style="color: #666; margin: 5px 0;">Date: <strong>${new Date().toLocaleDateString()}</strong></p>
+                        </div>
+                        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+                            If you have any questions or need help, feel free to contact our support team.
+                        </p>
+                        <p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 15px;">
+                            Best regards,<br>
+                            <strong>${appName}</strong> Team
+                        </p>
+                    </div>
+                </div>
+            `
+        };
+
+        console.log(`[EMAIL] Calling transporter.sendMail()...`);
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[EMAIL] ✓ EMAIL SENT SUCCESSFULLY`);
+        console.log(`[EMAIL] Response ID: ${info.response}`);
+        return true;
+    } catch (error: any) {
+        console.error(`[EMAIL] ✗ EMAIL SEND FAILED`);
+        console.error(`[EMAIL ERROR] To: ${email}`);
+        console.error(`[EMAIL ERROR] Message: ${error?.message}`);
+        console.error(`[EMAIL ERROR] Code: ${error?.code}`);
+        console.error(`[EMAIL ERROR] Response: ${error?.response}`);
+        console.error(`[EMAIL ERROR] Full error:`, error);
+        return false;
+    }
+};
 
 // Ensure uploads directory exists
 const uploadDir = path.join(__dirname, '../uploads');
@@ -78,6 +167,26 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
+// Test Email Endpoint
+app.post('/api/test-email', async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    try {
+        const success = await sendRegistrationEmail(email, 'Test User', 'SecureVault');
+        if (success) {
+            res.json({ message: 'Test email sent successfully!', email });
+        } else {
+            res.status(500).json({ error: 'Failed to send test email. Check server logs.' });
+        }
+    } catch (error) {
+        console.error('Test email error:', error);
+        res.status(500).json({ error: 'Test email failed', details: String(error) });
+    }
+});
+
 // Stats API (accessible by any logged-in user, but data is scoped)
 app.get('/api/stats', authMiddleware, async (req: AuthRequest, res) => {
     try {
@@ -89,12 +198,51 @@ app.get('/api/stats', authMiddleware, async (req: AuthRequest, res) => {
 
         // For non-admins, we only care about their own files
         let fileCountQuery = supabase.from('files').select('*', { count: 'exact', head: true });
+        let fileSizeQuery = supabase.from('files').select('file_id, size, encrypted_path, owner_id');
+        
         if (!isAdmin) {
             fileCountQuery = fileCountQuery.eq('owner_id', req.user.userId);
+            fileSizeQuery = fileSizeQuery.eq('owner_id', req.user.userId);
         }
         
         const { count: userFileCount, error: fileError } = await fileCountQuery;
         const finalFileCount = fileError ? 0 : (userFileCount || 0);
+        
+        // Calculate total file size
+        const { data: fileSizeData, error: sizeError } = await fileSizeQuery;
+        let totalFileSize = 0;
+        if (!sizeError && fileSizeData && Array.isArray(fileSizeData)) {
+            console.log(`[STATS] Found ${fileSizeData.length} files for user ${req.user.userId}`);
+            for (const file of fileSizeData) {
+                console.log(`[STATS] File ${file.file_id}: name in DB, size in DB: ${file.size}, path: ${file.encrypted_path}`);
+                if (file.size && file.size > 0) {
+                    // If size is already stored in DB, use that
+                    totalFileSize += file.size;
+                    console.log(`[STATS] Using DB size: ${file.size}, total now: ${totalFileSize}`);
+                } else if (file.encrypted_path) {
+                    // If size is missing, try to get it from filesystem
+                    try {
+                        const stats = fs.statSync(file.encrypted_path);
+                        console.log(`[STATS] File from disk: ${file.encrypted_path}, size: ${stats.size}`);
+                        totalFileSize += stats.size;
+                        // Update the database with the correct size
+                        try {
+                            await supabase
+                                .from('files')
+                                .update({ size: stats.size })
+                                .eq('file_id', file.file_id);
+                        } catch (updateErr) {
+                            console.error(`Could not update file size in DB:`, updateErr);
+                        }
+                    } catch (err) {
+                        // File doesn't exist or can't be read, skip it
+                        console.error(`Could not read file size for ${file.encrypted_path}:`, err);
+                    }
+                }
+            }
+        } else {
+            console.log(`[STATS] sizeError: ${sizeError}, data: ${fileSizeData}`);
+        }
 
         let alertsCountQuery = supabase.from('alerts').select('*', { count: 'exact', head: true });
         if (!isAdmin) {
@@ -129,6 +277,8 @@ app.get('/api/stats', authMiddleware, async (req: AuthRequest, res) => {
             finalLogsCount = counts['audit_trail'] || 0;
         }
 
+        console.log(`[STATS] User: ${req.user.userId}, Files: ${finalFileCount}, Storage: ${totalFileSize} bytes (${(totalFileSize / (1024*1024*1024)).toFixed(2)} GB)`);
+
         res.json({
             health: "Connected",
             users: finalUserCount,
@@ -136,11 +286,86 @@ app.get('/api/stats', authMiddleware, async (req: AuthRequest, res) => {
             alerts: finalThreatsCount,
             logs: finalLogsCount, // legacy mapping
             table_counts: counts,
-            uptime: process.uptime()
+            uptime: process.uptime(),
+            storage: {
+                used: totalFileSize,
+                total: 2 * 1024 * 1024 * 1024 // 2GB in bytes
+            }
         });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Failed to fetch stats" });
+    }
+});
+
+// Google OAuth API
+app.post('/api/auth/google', async (req, res): Promise<any> => {
+    const { credential } = req.body;
+    if (!credential) {
+        return res.status(400).json({ error: 'Google access token is required' });
+    }
+    try {
+        // Verify access token via Google's UserInfo endpoint
+        const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${credential}` }
+        });
+        if (!googleRes.ok) {
+            return res.status(401).json({ error: 'Invalid or expired Google token' });
+        }
+        const googleUser: any = await googleRes.json();
+        const { email, name, sub: googleId } = googleUser;
+        if (!email) return res.status(401).json({ error: 'Could not get email from Google' });
+        const username = name || email.split('@')[0];
+
+        // Check if user already exists
+        let { data: user, error: findError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .single();
+
+        if (!user) {
+            // Create new user — no password (Google-only account)
+            const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert({
+                    email,
+                    username,
+                    password_hash: await bcrypt.hash(googleId + 'google_oauth', 10), // placeholder hash
+                    role: 'user',
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                })
+                .select()
+                .single();
+
+            if (createError || !newUser) {
+                return res.status(500).json({ error: 'Failed to create Google user' });
+            }
+            user = newUser;
+        }
+
+        // Update last login
+        await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('user_id', user.user_id);
+
+        // Record login log
+        await supabase.from('login_logs').insert({
+            user_id: user.user_id,
+            ip_address: req.ip || '0.0.0.0',
+            success: true,
+            login_time: new Date().toISOString(),
+        });
+
+        const token = jwt.sign(
+            { userId: user.user_id, role: user.role, email: user.email, username: user.username },
+            JWT_SECRET,
+            { expiresIn: '1d' }
+        );
+
+        res.json({ token, user: { email: user.email, role: user.role, username: user.username } });
+    } catch (error) {
+        console.error('Google auth error:', error);
+        res.status(401).json({ error: 'Google authentication failed' });
     }
 });
 
@@ -190,9 +415,12 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
 app.post('/api/auth/register', async (req, res): Promise<any> => {
     const { email, password, role, username } = req.body;
     try {
+        console.log(`[REGISTER] New registration attempt for email: ${email}, username: ${username}`);
+        
         // Check existing
         const { data: existingUser } = await supabase.from('users').select('user_id').eq('email', email).single();
         if (existingUser) {
+            console.log(`[REGISTER] User already exists: ${email}`);
             return res.status(400).json({ error: 'User already exists' });
         }
 
@@ -207,13 +435,45 @@ app.post('/api/auth/register', async (req, res): Promise<any> => {
             created_at: new Date().toISOString()
         }).select().single();
 
-        if (error) throw error;
+        if (error) {
+            console.error(`[REGISTER] Database insert error for ${email}:`, error);
+            throw error;
+        }
+
+        console.log(`[REGISTER] User created successfully: ${email} with ID: ${user.user_id}`);
+
+        // Send registration email
+        const appName = process.env.APP_NAME || 'SecureVault';
+        console.log(`[REGISTER] Attempting to send registration email to: ${email}`);
+        const emailResult = await sendRegistrationEmail(email, user.username || email.split('@')[0], appName);
+        console.log(`[REGISTER] Email send result: ${emailResult ? 'SUCCESS' : 'FAILED'}`);
 
         const token = jwt.sign({ userId: user.user_id, role: user.role, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
+        console.log(`[REGISTER] Registration completed successfully for: ${email}`);
         res.json({ token, user: { email: user.email, role: user.role, username: user.username } });
-    } catch (error) {
-        console.error("Register error:", error);
+    } catch (error: any) {
+        console.error("[REGISTER] Registration error:", error?.message || error);
         res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// Delete User by Email (for testing/cleanup)
+app.delete('/api/admin/user/:email', async (req, res): Promise<any> => {
+    const { email } = req.params;
+    try {
+        console.log(`[ADMIN] Attempting to delete user: ${email}`);
+        const { error } = await supabase.from('users').delete().eq('email', email);
+        
+        if (error) {
+            console.error(`[ADMIN] Failed to delete user: ${email}`, error);
+            return res.status(500).json({ error: 'Failed to delete user' });
+        }
+        
+        console.log(`[ADMIN] User deleted successfully: ${email}`);
+        res.json({ message: `User ${email} deleted successfully` });
+    } catch (error: any) {
+        console.error("[ADMIN] Delete user error:", error?.message || error);
+        res.status(500).json({ error: 'Failed to delete user' });
     }
 });
 
@@ -255,12 +515,22 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
             return res.status(401).json({ error: 'Unauthorized: No user ID attached to session' });
         }
 
+        // Get actual file size from disk
+        let actualFileSize = req.file.size;
+        try {
+            const stats = fs.statSync(req.file.path);
+            actualFileSize = stats.size;
+            console.log(`[UPLOAD] File: ${req.file.originalname}, Multer size: ${req.file.size}, Disk size: ${actualFileSize}`);
+        } catch (err) {
+            console.error(`[UPLOAD] Could not stat file: ${req.file.path}`, err);
+        }
+
         // We attempt to insert description. If it fails due to missing column, we fallback to without it.
         // It's better to ensure the schema has description: `ALTER TABLE files ADD COLUMN description TEXT;`
         let insertData: any = {
             file_name: req.file.originalname,
             encrypted_path: req.file.path,
-            size: req.file.size,
+            size: actualFileSize,
             checksum: "checksum_placeholder",
             owner_id: ownerId,
             upload_time: new Date().toISOString()
@@ -306,6 +576,126 @@ app.get('/api/files', authMiddleware, async (req: AuthRequest, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Failed to fetch files" });
+    }
+});
+
+// GET /api/files/:fileId/download - Download a file
+app.get('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const fileId = req.params.fileId;
+
+        // Get file from database
+        const { data: file, error } = await supabase
+            .from('files')
+            .select('*')
+            .eq('file_id', fileId)
+            .single();
+
+        if (error || !file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Verify ownership (user can only download their own files, admins can download all)
+        if (req.user.userId !== file.owner_id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Check if file exists on disk
+        const filePath = file.encrypted_path;
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'File not found on server' });
+        }
+
+        // Record download in access logs
+        try {
+            await supabase.from('access_logs').insert({
+                user_id: req.user.userId,
+                file_id: fileId,
+                action: 'download',
+                access_time: new Date().toISOString(),
+                ip_address: req.ip || '0.0.0.0'
+            });
+        } catch (logError) {
+            console.error("Failed to log access:", logError);
+        }
+
+        // Send file
+        res.download(filePath, file.file_name);
+    } catch (error) {
+        console.error('Download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// DELETE /api/files/:fileId - Delete a file
+app.delete('/api/files/:fileId', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const fileId = req.params.fileId;
+
+        // Get file from database
+        const { data: file, error: fetchError } = await supabase
+            .from('files')
+            .select('*')
+            .eq('file_id', fileId)
+            .single();
+
+        if (fetchError || !file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Verify ownership (user can only delete their own files, admins can delete all)
+        if (req.user.userId !== file.owner_id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Delete file from disk if it exists
+        const filePath = file.encrypted_path;
+        if (fs.existsSync(filePath)) {
+            try {
+                fs.unlinkSync(filePath);
+            } catch (fileError) {
+                console.error('Error deleting file from disk:', fileError);
+                // Continue with database deletion even if file deletion fails
+            }
+        }
+
+        // Delete from database
+        const { error: deleteError } = await supabase
+            .from('files')
+            .delete()
+            .eq('file_id', fileId);
+
+        if (deleteError) {
+            return res.status(500).json({ error: 'Failed to delete file from database' });
+        }
+
+        // Record deletion in audit trail
+        try {
+            await supabase.from('audit_trail').insert({
+                user_id: req.user.userId,
+                action: 'file_deleted',
+                resource_type: 'file',
+                resource_id: fileId,
+                details: `Deleted file: ${file.file_name}`,
+                event_time: new Date().toISOString(),
+                ip_address: req.ip || '0.0.0.0'
+            });
+        } catch (auditError) {
+            console.error("Failed to log audit:", auditError);
+        }
+
+        res.json({ message: 'File deleted successfully' });
+    } catch (error) {
+        console.error('Delete error:', error);
+        res.status(500).json({ error: 'Deletion failed' });
     }
 });
 

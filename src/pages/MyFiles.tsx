@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { authFetch } from "@/lib/authFetch";
+import { useToast } from "@/hooks/use-toast";
 
 interface FileData {
     id: string;
@@ -21,6 +22,7 @@ export default function MyFiles() {
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
     const [searchQuery, setSearchQuery] = useState("");
     const [files, setFiles] = useState<FileData[]>([]);
+    const { toast } = useToast();
 
     useEffect(() => {
         fetchFiles();
@@ -46,6 +48,70 @@ export default function MyFiles() {
             }
         } catch (error) {
             console.error("Failed to fetch files", error);
+        }
+    };
+
+    const handleDownload = async (fileId: string, fileName: string) => {
+        try {
+            const res = await authFetch(`/api/files/${fileId}/download`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                toast({ title: "Success", description: "File downloaded successfully" });
+            } else {
+                toast({ title: "Error", description: "Failed to download file", variant: "destructive" });
+            }
+        } catch (error) {
+            console.error("Download error:", error);
+            toast({ title: "Error", description: "Failed to download file", variant: "destructive" });
+        }
+    };
+
+    const handleShare = async (fileId: string, fileName: string) => {
+        try {
+            // Create a shareable link - could generate a unique token
+            const shareLink = `${window.location.origin}/shared/${fileId}`;
+            
+            // Copy to clipboard
+            await navigator.clipboard.writeText(shareLink);
+            toast({ title: "Success", description: "Share link copied to clipboard" });
+        } catch (error) {
+            console.error("Share error:", error);
+            toast({ title: "Error", description: "Failed to create share link", variant: "destructive" });
+        }
+    };
+
+    const handleDelete = async (fileId: string) => {
+        if (!window.confirm("Are you sure you want to delete this file? This action cannot be undone.")) {
+            return;
+        }
+
+        try {
+            const res = await authFetch(`/api/files/${fileId}`, {
+                method: 'DELETE',
+            });
+
+            if (res.ok) {
+                setFiles(files.filter(f => f.id !== fileId));
+                toast({ title: "Success", description: "File deleted successfully" });
+            } else {
+                const errorData = await res.json();
+                toast({ 
+                    title: "Error", 
+                    description: errorData.error || "Failed to delete file", 
+                    variant: "destructive" 
+                });
+            }
+        } catch (error) {
+            console.error("Delete error:", error);
+            toast({ title: "Error", description: "Failed to delete file", variant: "destructive" });
         }
     };
 
@@ -123,7 +189,13 @@ export default function MyFiles() {
                     )}
                 >
                     {filteredFiles.map((file) => (
-                        <FileCard key={file.id} {...file} />
+                        <FileCard 
+                            key={file.id} 
+                            {...file}
+                            onDownload={handleDownload}
+                            onShare={handleShare}
+                            onDelete={handleDelete}
+                        />
                     ))}
                 </div>
 

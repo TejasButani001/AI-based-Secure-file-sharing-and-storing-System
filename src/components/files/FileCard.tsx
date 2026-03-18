@@ -9,11 +9,15 @@ import {
 import { cn } from "@/lib/utils";
 
 interface FileCardProps {
+  id: string;
   name: string;
   type: "document" | "image" | "archive" | "other";
   size: string;
   uploadedAt: string;
   encrypted: boolean;
+  onDownload?: (fileId: string, fileName: string) => void;
+  onShare?: (fileId: string, fileName: string) => void;
+  onDelete?: (fileId: string) => void;
 }
 
 const fileIcons = {
@@ -30,11 +34,11 @@ const fileColors = {
   other: "text-muted-foreground bg-muted",
 };
 
-export function FileCard({ name, type, size, uploadedAt, encrypted }: FileCardProps) {
+export function FileCard({ id, name, type, size, uploadedAt, encrypted, onDownload, onShare, onDelete }: FileCardProps) {
   const Icon = fileIcons[type];
 
   return (
-    <div className="glass-card p-4 hover:border-primary/30 transition-all duration-200 group">
+    <div className="glass-card p-4 hover:border-primary/30 transition-colors group">
       <div className="flex items-start gap-3">
         <div className={cn("p-3 rounded-lg", fileColors[type])}>
           <Icon className="w-6 h-6" />
@@ -55,21 +59,30 @@ export function FileCard({ name, type, size, uploadedAt, encrypted }: FileCardPr
             <Button
               variant="ghost"
               size="icon"
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              className="opacity-0 group-hover:opacity-100"
             >
               <MoreVertical className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="bg-popover border-border">
-            <DropdownMenuItem className="cursor-pointer">
+            <DropdownMenuItem 
+              className="cursor-pointer"
+              onClick={() => onDownload?.(id, name)}
+            >
               <Download className="w-4 h-4 mr-2" />
               Download
             </DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer">
+            <DropdownMenuItem 
+              className="cursor-pointer"
+              onClick={() => onShare?.(id, name)}
+            >
               <Share2 className="w-4 h-4 mr-2" />
               Share
             </DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer text-destructive">
+            <DropdownMenuItem 
+              className="cursor-pointer text-destructive"
+              onClick={() => onDelete?.(id)}
+            >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
             </DropdownMenuItem>

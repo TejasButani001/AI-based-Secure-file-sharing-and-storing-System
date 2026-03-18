@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { Navbar } from "@/components/layout/Navbar";
 
 const faqs = [
     {
@@ -73,10 +73,7 @@ function FAQItem({ question, answer, index }: { question: string; answer: string
     const [open, setOpen] = useState(false);
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05 }}
+        <div
             className="border border-border/50 rounded-xl overflow-hidden"
         >
             <button
@@ -93,22 +90,18 @@ function FAQItem({ question, answer, index }: { question: string; answer: string
                     )}
                 />
             </button>
-            <AnimatePresence>
+            <>
                 {open && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
+                    <div
                         className="overflow-hidden"
                     >
                         <div className="px-5 pb-5 text-muted-foreground leading-relaxed">
                             {answer}
                         </div>
-                    </motion.div>
+                    </div>
                 )}
-            </AnimatePresence>
-        </motion.div>
+            </>
+        </div>
     );
 }
 
@@ -116,31 +109,12 @@ export default function FAQ() {
     return (
         <div className="min-h-screen bg-background text-foreground font-sans">
             {/* Navbar */}
-            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-background/60 backdrop-blur-xl">
-                <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-                    <Link to="/" className="flex items-center gap-3 group">
-                        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                            <Shield className="w-6 h-6 text-white" />
-                        </div>
-                        <span className="font-bold text-xl tracking-tight group-hover:text-primary transition-colors">SecureVault</span>
-                    </Link>
-                    <div className="flex items-center gap-4">
-                        <ModeToggle />
-                        <Link to="/">
-                            <Button variant="ghost" className="text-sm font-medium">
-                                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Home
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </nav>
+            <Navbar />
 
             {/* FAQ Content */}
             <section className="pt-32 pb-20 px-4">
                 <div className="container mx-auto max-w-3xl">
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
+                    <div
                         className="text-center mb-12"
                     >
                         <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
@@ -149,7 +123,7 @@ export default function FAQ() {
                         <p className="text-lg text-muted-foreground max-w-xl mx-auto">
                             Everything you need to know about SecureVault's AI-powered secure file sharing system.
                         </p>
-                    </motion.div>
+                    </div>
 
                     <div className="space-y-3">
                         {faqs.map((faq, i) => (
@@ -158,10 +132,7 @@ export default function FAQ() {
                     </div>
 
                     {/* CTA */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.5 }}
+                    <div
                         className="text-center mt-16 p-8 rounded-2xl bg-secondary/20 border border-border/50"
                     >
                         <h2 className="text-2xl font-bold mb-3">Still have questions?</h2>
@@ -174,7 +145,7 @@ export default function FAQ() {
                                 <Button variant="outline" className="rounded-full px-6">Log In</Button>
                             </Link>
                         </div>
-                    </motion.div>
+                    </div>
                 </div>
             </section>
 

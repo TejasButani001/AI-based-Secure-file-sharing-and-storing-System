@@ -19,27 +19,21 @@ export function StatCard({
   iconColor = "text-primary",
 }: StatCardProps) {
   return (
-    <div className="relative overflow-hidden p-6 rounded-2xl bg-card border border-border/50 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="flex items-start justify-between relative z-10">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground mb-1">{title}</p>
-          <h3 className="text-3xl font-bold tracking-tight text-foreground">{value}</h3>
+    <div className="p-6 rounded-lg bg-card border border-border shadow-sm hover:shadow-md transition-shadow h-full">
+      <div className="flex items-start justify-between gap-4 h-full">
+        <div className="flex flex-col justify-between flex-1">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">{title}</p>
+            <h3 className="text-4xl font-bold text-foreground mb-2">{value}</h3>
+          </div>
           {change && (
-            <p
-              className={cn(
-                "text-xs font-medium mt-2 flex items-center gap-1",
-                changeType === "positive" && "text-emerald-500",
-                changeType === "negative" && "text-rose-500",
-                changeType === "neutral" && "text-muted-foreground"
-              )}
-            >
-              {changeType === 'positive' ? '↑' : changeType === 'negative' ? '↓' : '•'} {change}
+            <p className={cn("text-sm font-medium", changeType === "positive" && "text-emerald-600", changeType === "negative" && "text-rose-600", changeType === "neutral" && "text-muted-foreground")}>
+              {change}
             </p>
           )}
         </div>
-        <div className={cn("p-3 rounded-xl bg-primary/10 group-hover:scale-110 transition-transform duration-300", iconColor)}>
-          <Icon className="w-5 h-5" />
+        <div className={cn("p-3 rounded-lg flex-shrink-0", iconColor)}>
+          <Icon className="w-6 h-6" />
         </div>
       </div>
     </div>

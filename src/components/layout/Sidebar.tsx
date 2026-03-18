@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { motion, AnimatePresence } from "framer-motion";
+
 
 export function Sidebar() {
   const location = useLocation();
@@ -54,13 +54,10 @@ export function Sidebar() {
   );
 
   return (
-    <motion.aside
-      initial={{ width: 256 }}
-      animate={{ width: collapsed ? 80 : 256 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+    <aside
       className={cn(
-        "fixed left-0 top-0 h-screen bg-sidebar/80 backdrop-blur-xl border-r border-sidebar-border/50 flex flex-col z-50 shadow-2xl shadow-black/5",
-        collapsed ? "items-center" : ""
+        "fixed left-0 top-0 h-screen bg-sidebar/80 backdrop-blur-xl border-r border-sidebar-border/50 flex flex-col z-50 shadow-2xl shadow-black/5 transition-all duration-300",
+        collapsed ? "w-20 items-center" : "w-64"
       )}
     >
       {/* Logo */}
@@ -69,18 +66,11 @@ export function Sidebar() {
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20 shrink-0 uppercase font-bold text-white">
             {user?.name ? user.name.substring(0, 2) : <Shield className="w-5 h-5 text-white" />}
           </div>
-          <AnimatePresence mode="wait">
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                className="font-bold text-lg tracking-tight whitespace-nowrap"
-              >
+          {!collapsed && (
+              <span className="font-bold text-lg tracking-tight whitespace-nowrap">
                 SecureVault
-              </motion.span>
+              </span>
             )}
-          </AnimatePresence>
         </div>
       </div>
 
@@ -95,36 +85,29 @@ export function Sidebar() {
               className="relative group block"
             >
               <div className={cn(
-                "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-300 relative z-10",
+                "flex items-center gap-3 px-3 py-3 rounded-xl transition-colors relative z-10",
                 isActive ? "text-primary dark:text-white" : "text-muted-foreground hover:text-foreground",
                 collapsed && "justify-center px-0"
               )}>
                 {isActive && (
-                  <motion.div
-                    layoutId="sidebar-active-pill"
+                  <div
                     className="absolute inset-0 bg-primary/10 dark:bg-primary/20 rounded-xl -z-10"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   />
                 )}
                 <item.icon className={cn("w-5 h-5 shrink-0 transition-colors", isActive && "text-primary dark:text-blue-400")} />
 
-                <AnimatePresence>
                   {!collapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: "auto" }}
-                      exit={{ opacity: 0, width: 0 }}
+                    <span
                       className="text-sm font-medium whitespace-nowrap"
                     >
                       {item.label}
-                    </motion.span>
+                    </span>
                   )}
-                </AnimatePresence>
               </div>
 
               {/* Tooltip for collapsed state */}
               {collapsed && (
-                <div className="absolute left-full ml-4 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-popover text-popover-foreground text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                <div className="absolute left-full ml-4 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-popover text-popover-foreground text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
                   {item.label}
                 </div>
               )}
@@ -148,11 +131,11 @@ export function Sidebar() {
         <button
           onClick={logout}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200 group",
+            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors group",
             collapsed && "justify-center"
           )}
         >
-          <LogOut className="w-5 h-5 shrink-0 group-hover:-translate-x-1 transition-transform" />
+          <LogOut className="w-5 h-5 shrink-0" />
           {!collapsed && <span className="text-sm font-medium">Logout</span>}
         </button>
       </div>
@@ -164,13 +147,12 @@ export function Sidebar() {
         onClick={() => setCollapsed(!collapsed)}
         className="absolute -right-4 top-24 w-8 h-8 rounded-full bg-background border border-border shadow-md hover:bg-accent hover:text-accent-foreground z-50"
       >
-        <motion.div
-          animate={{ rotate: collapsed ? 180 : 0 }}
-          transition={{ duration: 0.3 }}
+        <div
+          style={{ transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}
         >
           <ChevronLeft className="w-4 h-4" />
-        </motion.div>
+        </div>
       </Button>
-    </motion.aside>
+    </aside>
   );
 }

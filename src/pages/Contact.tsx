@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 import { Shield, ArrowLeft, Mail, Phone, MapPin, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
-import { motion } from "framer-motion";
+import { Navbar } from "@/components/layout/Navbar";
+
 import { useState } from "react";
 
 export default function Contact() {
@@ -15,46 +16,24 @@ export default function Contact() {
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans">
-            {/* Navbar */}
-            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-background/60 backdrop-blur-xl">
-                <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-                    <Link to="/" className="flex items-center gap-3 group">
-                        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                            <Shield className="w-6 h-6 text-white" />
-                        </div>
-                        <span className="font-bold text-xl tracking-tight group-hover:text-primary transition-colors">SecureVault</span>
-                    </Link>
-                    <div className="flex items-center gap-4">
-                        <ModeToggle />
-                        <Link to="/">
-                            <Button variant="ghost" className="text-sm font-medium">
-                                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Home
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </nav>
+            <Navbar />
 
             {/* Content */}
             <section className="pt-32 pb-20 px-4">
                 <div className="container mx-auto max-w-5xl">
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
+                    <div
                         className="text-center mb-12"
                     >
+
                         <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">Contact Us</h1>
                         <p className="text-lg text-muted-foreground max-w-xl mx-auto">
                             Have questions or need help? Reach out to our team.
                         </p>
-                    </motion.div>
+                    </div>
 
                     <div className="grid lg:grid-cols-2 gap-12">
                         {/* Contact Info */}
-                        <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.1 }}
+                        <div
                             className="space-y-6"
                         >
                             <div>
@@ -69,12 +48,9 @@ export default function Contact() {
                                 { icon: Phone, label: "Phone", value: "+91 98765 43210", href: "tel:+919876543210" },
                                 { icon: MapPin, label: "Address", value: "Gujarat, India", href: "#" },
                             ].map((item, i) => (
-                                <motion.a
+                                <a
                                     key={i}
                                     href={item.href}
-                                    initial={{ opacity: 0, y: 15 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.2 + i * 0.1 }}
                                     className="flex items-start gap-4 p-4 rounded-xl bg-secondary/20 border border-border/30 hover:bg-secondary/30 transition-colors"
                                 >
                                     <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -84,16 +60,12 @@ export default function Contact() {
                                         <div className="text-sm text-muted-foreground">{item.label}</div>
                                         <div className="font-medium">{item.value}</div>
                                     </div>
-                                </motion.a>
+                                </a>
                             ))}
-                        </motion.div>
+                        </div>
 
                         {/* Contact Form */}
-                        <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.2 }}
-                        >
+                        <div>
                             {submitted ? (
                                 <div className="flex flex-col items-center justify-center h-full p-8 rounded-2xl bg-secondary/20 border border-border/30 text-center">
                                     <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
@@ -152,7 +124,7 @@ export default function Contact() {
                                     </Button>
                                 </form>
                             )}
-                        </motion.div>
+                        </div>
                     </div>
                 </div>
             </section>

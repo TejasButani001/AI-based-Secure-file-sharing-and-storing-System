@@ -1,11 +1,11 @@
 
-import { FolderLock, Users, AlertTriangle, Activity } from "lucide-react";
+import { FolderLock, Users, AlertTriangle, Activity, HardDrive } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { SecurityStatus } from "@/components/dashboard/SecurityStatus";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+
 import { authFetch } from "@/lib/authFetch";
 import { useAuth } from "@/context/AuthContext";
 
@@ -18,7 +18,8 @@ export default function Dashboard() {
     users: 0,
     alerts: 0,
     logs: 0,
-    health: "Connected"
+    health: "Connected",
+    storage: { used: 0, total: 2 * 1024 * 1024 * 1024 }
   });
 
   useEffect(() => {
@@ -32,122 +33,123 @@ export default function Dashboard() {
           throw new Error('Invalid JSON response');
         }
       })
-      .then(data => setStats(data))
+      .then(data => {
+        // Ensure storage object exists
+        if (!data.storage) {
+          data.storage = { used: 0, total: 2 * 1024 * 1024 * 1024 };
+        }
+        setStats(data);
+      })
       .catch(err => {
         console.error("Failed to fetch stats:", err);
         // Keep default/mock stats on error so UI doesn't break
       });
   }, []);
 
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
+  // Helper function to format bytes to readable size
+  const formatBytes = (bytes: number) => {
+    if (!bytes || bytes === 0) return "0 B";
+    if (bytes < 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    try {
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      if (i < 0 || i >= sizes.length) return "0 B";
+      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+    } catch {
+      return "0 B";
     }
   };
 
-  const item = {
-    hidden: { y: 20, opacity: 0 },
-    show: { y: 0, opacity: 1 }
-  };
+  // Calculate storage percentage
+  const storagePercentage = stats.storage && stats.storage.total > 0 
+    ? Math.round((stats.storage.used / stats.storage.total) * 100)
+    : 0;
+
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+      <div className="p-6 lg:p-8 max-w-7xl mx-auto">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-10"
-        >
-          <h1 className="text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70 mb-2">
+        <div className="mb-8">
+          <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-2">
             Dashboard
           </h1>
-          <p className="text-muted-foreground text-lg">
-            Overview of your secure file ecosystem
+          <p className="text-base text-muted-foreground">
+            System overview & recent activity
           </p>
-        </motion.div>
+        </div>
 
-        <motion.div
-          variants={container}
-          initial="hidden"
-          animate="show"
-          className="space-y-8"
-        >
+        <div className="space-y-8">
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <motion.div variants={item}>
-              <StatCard
-                title="Total Files"
-                value={stats.files.toString()}
-                change="+12% from last month"
-                changeType="positive"
-                icon={FolderLock}
-                iconColor="text-blue-500"
-              />
-            </motion.div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 auto-rows-fr">
+            <StatCard
+              title="Total Files"
+              value={stats.files.toString()}
+              change="+12% from last month"
+              changeType="positive"
+              icon={FolderLock}
+              iconColor="text-blue-500"
+            />
             {isAdmin ? (
-              <motion.div variants={item}>
-                <StatCard
-                  title="Active Users"
-                  value={stats.users.toString()}
-                  change="System wide"
-                  changeType="neutral"
-                  icon={Users}
-                  iconColor="text-purple-500"
-                />
-              </motion.div>
-            ) : (
-                <motion.div variants={item}>
-                <StatCard
-                  title="Account Status"
-                  value="Active"
-                  change={`Role: ${user?.role || 'User'}`}
-                  changeType="positive"
-                  icon={Users}
-                  iconColor="text-purple-500"
-                />
-              </motion.div>
-            )}
-            <motion.div variants={item}>
               <StatCard
-                title="Alerts Today"
-                value={stats.alerts?.toString() || "0"}
-                change={stats.alerts > 0 ? "Requires Attention" : "All clear"}
-                changeType={stats.alerts > 0 ? "negative" : "positive"}
-                icon={AlertTriangle}
-                iconColor={stats.alerts > 0 ? "text-amber-500" : "text-success"}
-              />
-            </motion.div>
-            <motion.div variants={item}>
-              <StatCard
-                title="System Status"
-                value={stats.health}
-                change="Optimal"
+                title="Active Users"
+                value={stats.users.toString()}
+                change="System wide"
                 changeType="neutral"
-                icon={Activity}
-                iconColor="text-emerald-500"
+                icon={Users}
+                iconColor="text-purple-500"
               />
-            </motion.div>
+            ) : (
+              <StatCard
+                title="Account Status"
+                value="Active"
+                change={`Role: ${user?.role || 'User'}`}
+                changeType="positive"
+                icon={Users}
+                iconColor="text-purple-500"
+              />
+            )}
+            <StatCard
+              title="Alerts Today"
+              value={stats.alerts?.toString() || "0"}
+              change={stats.alerts > 0 ? "Requires Attention" : "All clear"}
+              changeType={stats.alerts > 0 ? "negative" : "positive"}
+              icon={AlertTriangle}
+              iconColor={stats.alerts > 0 ? "text-amber-500" : "text-success"}
+            />
+            <StatCard
+              title="System Status"
+              value={stats.health}
+              change="Optimal"
+              changeType="neutral"
+              icon={Activity}
+              iconColor="text-emerald-500"
+            />
+            <StatCard
+              title="Storage Used"
+              value={formatBytes(stats.storage?.used || 0)}
+              change={`${storagePercentage}% of 2GB`}
+              changeType={storagePercentage > 80 ? "negative" : storagePercentage > 50 ? "neutral" : "positive"}
+              icon={HardDrive}
+              iconColor="text-orange-500"
+            />
           </div>
 
           {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
-            <motion.div variants={item} className="h-full">
+            <div className="h-full">
               <SecurityStatus
                 status={stats.alerts > 0 ? "warning" : "secure"}
                 lastScan="Just now"
                 threatsBlocked={stats.alerts || 0}
               />
-            </motion.div>
-            <motion.div variants={item} className="h-full">
+            </div>
+            <div className="h-full">
               <RecentActivity />
-            </motion.div>
+            </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </DashboardLayout>
   );

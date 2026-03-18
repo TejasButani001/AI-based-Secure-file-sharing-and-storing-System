@@ -65,41 +65,34 @@ export function RecentActivity() {
   }, []);
 
   return (
-    <div className="h-full p-6 rounded-3xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-shadow">
+    <div className="h-full p-6 rounded-lg bg-card border border-border shadow-sm">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Activity className="w-5 h-5 text-primary" />
-          </div>
+          <Activity className="w-5 h-5 text-primary" />
           <h3 className="font-semibold text-lg text-foreground">Recent Activity</h3>
         </div>
-        <button className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">View All</button>
+        <button className="text-sm font-medium text-primary hover:text-primary/80">View All</button>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading activity...</p>
+          <p className="text-base text-muted-foreground">Loading activity...</p>
         ) : activities.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No recent activity found.</p>
+          <p className="text-base text-muted-foreground">No recent activity found.</p>
         ) : (
           activities.map((item, index) => {
             const Icon = activityIcons[item.type] || File;
             return (
               <div
                 key={item.id}
-                className="group flex items-start gap-4 p-3 rounded-xl hover:bg-secondary/50 transition-colors border border-transparent hover:border-border/50 cursor-default"
-                style={{ animationDelay: `${index * 100}ms` }}
+                className="flex items-start gap-4 p-3 rounded hover:bg-secondary/30 border border-transparent cursor-default"
               >
-                <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110", activityColors[item.type] || activityColors.upload)}>
+                <div className={cn("p-2 rounded flex-shrink-0", activityColors[item.type] || activityColors.upload)}>
                   <Icon className="w-4 h-4" />
                 </div>
-                <div className="flex-1 min-w-0 py-0.5">
-                  <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{item.message}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-xs text-muted-foreground font-medium">{item.user}</p>
-                    <span className="text-[10px] text-muted-foreground/50">•</span>
-                    <p className="text-xs text-muted-foreground">{item.time}</p>
-                  </div>
+                <div className="flex-1 min-w-0 py-1">
+                  <p className="text-sm font-medium text-foreground truncate">{item.message}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{item.user} • {item.time}</p>
                 </div>
               </div>
             );

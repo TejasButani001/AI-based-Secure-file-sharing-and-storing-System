@@ -4,38 +4,18 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
-import { motion } from "framer-motion";
+import { Navbar } from "@/components/layout/Navbar";
 
 export default function MLInfo() {
     return (
         <div className="min-h-screen bg-background text-foreground font-sans">
             {/* Navbar */}
-            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-background/60 backdrop-blur-xl">
-                <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-                    <Link to="/" className="flex items-center gap-3 group">
-                        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                            <Shield className="w-6 h-6 text-white" />
-                        </div>
-                        <span className="font-bold text-xl tracking-tight group-hover:text-primary transition-colors">SecureVault</span>
-                    </Link>
-                    <div className="flex items-center gap-4">
-                        <ModeToggle />
-                        <Link to="/">
-                            <Button variant="ghost" className="text-sm font-medium">
-                                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Home
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </nav>
+            <Navbar />
 
             {/* Hero */}
             <section className="pt-32 pb-16 px-4">
                 <div className="container mx-auto max-w-4xl text-center">
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                    >
+                    <div>
                         <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-6">
                             <Brain className="w-8 h-8 text-primary" />
                         </div>
@@ -45,7 +25,7 @@ export default function MLInfo() {
                         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
                             Our AI-powered intrusion detection system uses machine learning to analyze user behavior, detect anomalies, and protect your data in real-time.
                         </p>
-                    </motion.div>
+                    </div>
                 </div>
             </section>
 
@@ -59,16 +39,13 @@ export default function MLInfo() {
                             { value: "24/7", label: "Continuous Monitoring" },
                             { value: "0", label: "False Negatives" },
                         ].map((stat, i) => (
-                            <motion.div
+                            <div
                                 key={i}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: 0.2 + i * 0.1 }}
                                 className="p-5 rounded-xl bg-secondary/20 border border-border/30 text-center"
                             >
                                 <div className="text-2xl font-bold text-primary mb-1">{stat.value}</div>
                                 <div className="text-xs text-muted-foreground">{stat.label}</div>
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -77,14 +54,11 @@ export default function MLInfo() {
             {/* How ML Works - Pipeline */}
             <section className="py-16 px-4 bg-secondary/10">
                 <div className="container mx-auto max-w-4xl">
-                    <motion.h2
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
+                    <h2
                         className="text-2xl font-bold mb-8 text-center"
                     >
                         How Our ML Pipeline Works
-                    </motion.h2>
+                    </h2>
 
                     <div className="space-y-4">
                         {[
@@ -94,12 +68,8 @@ export default function MLInfo() {
                             { step: "4", title: "Real-time Detection", desc: "The trained model analyzes every live user action in real-time, comparing it against learned patterns to identify anomalies and flag suspicious behavior instantly.", icon: Activity },
                             { step: "5", title: "Alert & Response", desc: "When suspicious activity is detected, the system generates intrusion alerts, notifies administrators, logs the event, and can automatically restrict access.", icon: Shield },
                         ].map((item, i) => (
-                            <motion.div
+                            <div
                                 key={i}
-                                initial={{ opacity: 0, x: -20 }}
-                                whileInView={{ opacity: 1, x: 0 }}
-                                viewport={{ once: true }}
-                                transition={{ delay: i * 0.1 }}
                                 className="flex items-start gap-4 p-5 rounded-xl bg-background border border-border/30"
                             >
                                 <div className="relative shrink-0">
@@ -114,7 +84,7 @@ export default function MLInfo() {
                                     <h3 className="font-semibold text-lg mb-1">{item.title}</h3>
                                     <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
                                 </div>
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -123,14 +93,11 @@ export default function MLInfo() {
             {/* Algorithms Used */}
             <section className="py-16 px-4">
                 <div className="container mx-auto max-w-4xl">
-                    <motion.h2
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
+                    <h2
                         className="text-2xl font-bold mb-8 text-center"
                     >
                         ML Algorithms & Techniques
-                    </motion.h2>
+                    </h2>
 
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {[
@@ -141,12 +108,8 @@ export default function MLInfo() {
                             { title: "Behavior Analysis", desc: "Profiles individual user behavior patterns to detect compromised accounts.", icon: Activity },
                             { title: "Pattern Recognition", desc: "Identifies known attack signatures and threat patterns across all system interactions.", icon: Lock },
                         ].map((algo, i) => (
-                            <motion.div
+                            <div
                                 key={i}
-                                initial={{ opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true }}
-                                transition={{ delay: i * 0.1 }}
                                 className="p-5 rounded-xl bg-secondary/20 border border-border/30"
                             >
                                 <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center mb-3">
@@ -154,7 +117,7 @@ export default function MLInfo() {
                                 </div>
                                 <h3 className="font-semibold mb-2">{algo.title}</h3>
                                 <p className="text-sm text-muted-foreground">{algo.desc}</p>
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -163,14 +126,11 @@ export default function MLInfo() {
             {/* What It Detects */}
             <section className="py-16 px-4 bg-secondary/10">
                 <div className="container mx-auto max-w-4xl">
-                    <motion.h2
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
+                    <h2
                         className="text-2xl font-bold mb-8 text-center"
                     >
                         What Our ML System Detects
-                    </motion.h2>
+                    </h2>
 
                     <div className="grid md:grid-cols-2 gap-4">
                         {[
@@ -185,17 +145,13 @@ export default function MLInfo() {
                             "Data exfiltration patterns",
                             "Unauthorized sharing or access",
                         ].map((item, i) => (
-                            <motion.div
+                            <div
                                 key={i}
-                                initial={{ opacity: 0, x: i % 2 === 0 ? -15 : 15 }}
-                                whileInView={{ opacity: 1, x: 0 }}
-                                viewport={{ once: true }}
-                                transition={{ delay: i * 0.05 }}
                                 className="flex items-center gap-3 p-4 rounded-xl bg-background border border-border/30"
                             >
                                 <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
                                 <span className="text-sm">{item}</span>
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -204,14 +160,11 @@ export default function MLInfo() {
             {/* Technologies Used */}
             <section className="py-16 px-4">
                 <div className="container mx-auto max-w-4xl">
-                    <motion.h2
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
+                    <h2
                         className="text-2xl font-bold mb-8 text-center"
                     >
                         Technologies & Stack
-                    </motion.h2>
+                    </h2>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[
@@ -224,17 +177,13 @@ export default function MLInfo() {
                             { name: "PostgreSQL", desc: "Data storage" },
                             { name: "AES-256", desc: "Encryption" },
                         ].map((tech, i) => (
-                            <motion.div
+                            <div
                                 key={i}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                whileInView={{ opacity: 1, scale: 1 }}
-                                viewport={{ once: true }}
-                                transition={{ delay: i * 0.05 }}
                                 className="p-4 rounded-xl bg-secondary/20 border border-border/30 text-center"
                             >
                                 <div className="font-semibold mb-1">{tech.name}</div>
                                 <div className="text-xs text-muted-foreground">{tech.desc}</div>
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -243,10 +192,7 @@ export default function MLInfo() {
             {/* CTA */}
             <section className="py-16 px-4">
                 <div className="container mx-auto max-w-2xl">
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        whileInView={{ opacity: 1 }}
-                        viewport={{ once: true }}
+                    <div
                         className="text-center p-8 rounded-2xl bg-secondary/20 border border-border/50"
                     >
                         <h2 className="text-2xl font-bold mb-3">Experience AI-Powered Security</h2>
@@ -259,7 +205,7 @@ export default function MLInfo() {
                                 <Button variant="outline" className="rounded-full px-6">View FAQ</Button>
                             </Link>
                         </div>
-                    </motion.div>
+                    </div>
                 </div>
             </section>
 
