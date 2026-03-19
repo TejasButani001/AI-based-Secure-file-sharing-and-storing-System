@@ -10,6 +10,7 @@ import path from 'path';
 import { authMiddleware, adminOnly, AuthRequest } from './middleware';
 import { OAuth2Client } from 'google-auth-library';
 import nodemailer from 'nodemailer';
+import { detectAnomalyOnLogin, getUserBehaviorProfile } from './anomalyDetection';
 
 dotenv.config();
 
@@ -370,6 +371,7 @@ app.post('/api/auth/google', async (req, res): Promise<any> => {
 });
 
 // Login API
+// Login API with anomaly detection
 app.post('/api/auth/login', async (req, res): Promise<any> => {
     const { email, password } = req.body;
     try {
@@ -397,6 +399,19 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
 
         if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Run anomaly detection on successful login
+        try {
+            const anomalyScore = await detectAnomalyOnLogin(
+                user.user_id,
+                String(ip_address),
+                req.get('user-agent')
+            );
+            console.log('[LOGIN] Anomaly detection result:', anomalyScore);
+        } catch (anomalyError) {
+            console.error('[LOGIN] Anomaly detection failed (non-critical):', anomalyError);
+            // Continue with login even if anomaly detection fails
         }
 
         // Update last login
@@ -735,6 +750,424 @@ app.get('/api/logs', authMiddleware, adminOnly, async (req: AuthRequest, res) =>
         res.json(logs);
     } catch (error) {
         res.status(500).json({ error: "Failed to fetch logs" });
+    }
+});
+
+// GET /api/admin/access-control - Get all users with file access info (admin only)
+app.get('/api/admin/access-control', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        console.log('[ACCESS_CONTROL] Starting data fetch...');
+        
+        // Get all users
+        const { data: users, error: usersError } = await supabase
+            .from('users')
+            .select('user_id, username, email, role, status, created_at');
+
+        if (usersError) {
+            console.error('[ACCESS_CONTROL] Users error:', usersError);
+            throw usersError;
+        }
+        console.log(`[ACCESS_CONTROL] Fetched ${users?.length || 0} users`);
+
+        // Get all files with access permissions
+        const { data: fileAccess, error: accessError } = await supabase
+            .from('file_access_permission')
+            .select('permission_id, file_id, user_id, access_type');
+
+        if (accessError) {
+            console.error('[ACCESS_CONTROL] File access error:', accessError);
+            throw accessError;
+        }
+        console.log(`[ACCESS_CONTROL] Fetched ${fileAccess?.length || 0} file permissions`);
+
+        // Get all files with owner info
+        const { data: files, error: filesError } = await supabase
+            .from('files')
+            .select('file_id, file_name, owner_id, size, upload_time');
+
+        if (filesError) {
+            console.error('[ACCESS_CONTROL] Files error:', filesError);
+            throw filesError;
+        }
+        console.log(`[ACCESS_CONTROL] Fetched ${files?.length || 0} files`);
+
+        const response = {
+            users: users || [],
+            files: files || [],
+            fileAccess: fileAccess || []
+        };
+
+        console.log('[ACCESS_CONTROL] Sending response:', {
+            userCount: response.users.length,
+            fileCount: response.files.length,
+            accessCount: response.fileAccess.length
+        });
+
+        res.json(response);
+    } catch (error) {
+        console.error('[ACCESS_CONTROL] Error:', error);
+        res.status(500).json({ 
+            error: "Failed to fetch access control data",
+            details: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+// PUT /api/admin/user/:userId/role - Update user role (admin only)
+app.put('/api/admin/user/:userId/role', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        const { role } = req.body;
+
+        if (!['admin', 'user'].includes(role)) {
+            return res.status(400).json({ error: "Invalid role" });
+        }
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ role })
+            .eq('user_id', userId)
+            .select();
+
+        if (error) throw error;
+
+        // Log admin action
+        await supabase.from('admin_actions').insert({
+            admin_id: req.user?.userId,
+            action: `Changed user role to ${role}`,
+            target_user: parseInt(userId),
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ message: "User role updated", data: data[0] });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to update user role" });
+    }
+});
+
+// PUT /api/admin/user/:userId/activate - Activate a user (admin only)
+app.put('/api/admin/user/:userId/activate', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        
+        console.log('[ACTIVATE] Attempting to activate user:', userId);
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ status: 'active' })
+            .eq('user_id', userId)
+            .select();
+
+        if (error) {
+            console.error('[ACTIVATE] Database error:', error);
+            throw error;
+        }
+
+        console.log('[ACTIVATE] User activated successfully:', data);
+
+        // Log admin action
+        await supabase.from('admin_actions').insert({
+            admin_id: req.user?.userId,
+            action: `Activated user`,
+            target_user: parseInt(userId),
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ message: "User activated", data: data[0] });
+    } catch (error) {
+        console.error('[ACTIVATE] Error:', error);
+        res.status(500).json({ 
+            error: "Failed to activate user",
+            details: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+// PUT /api/admin/user/:userId/suspend - Suspend a user (admin only)
+app.put('/api/admin/user/:userId/suspend', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        
+        console.log('[SUSPEND] Attempting to suspend user:', userId);
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ status: 'suspended' })
+            .eq('user_id', userId)
+            .select();
+
+        if (error) {
+            console.error('[SUSPEND] Database error:', error);
+            throw error;
+        }
+
+        console.log('[SUSPEND] User suspended successfully:', data);
+
+        // Log admin action
+        await supabase.from('admin_actions').insert({
+            admin_id: req.user?.userId,
+            action: `Suspended user`,
+            target_user: parseInt(userId),
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ message: "User suspended", data: data[0] });
+    } catch (error) {
+        console.error('[SUSPEND] Error:', error);
+        res.status(500).json({ 
+            error: "Failed to suspend user",
+            details: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+// POST /api/admin/file-access - Grant file access (admin only)
+app.post('/api/admin/file-access', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const { fileId, userId, accessType } = req.body;
+
+        if (!['read', 'write', 'admin'].includes(accessType)) {
+            return res.status(400).json({ error: "Invalid access type" });
+        }
+
+        // Check if permission already exists
+        const { data: existing } = await supabase
+            .from('file_access_permission')
+            .select('permission_id')
+            .eq('file_id', fileId)
+            .eq('user_id', userId)
+            .single();
+
+        if (existing) {
+            // Update existing
+            const { data, error } = await supabase
+                .from('file_access_permission')
+                .update({ access_type: accessType })
+                .eq('permission_id', existing.permission_id)
+                .select();
+
+            if (error) throw error;
+            return res.json({ message: "Access updated", data: data[0] });
+        }
+
+        // Create new permission
+        const { data, error } = await supabase
+            .from('file_access_permission')
+            .insert({
+                file_id: fileId,
+                user_id: userId,
+                access_type: accessType
+            })
+            .select();
+
+        if (error) throw error;
+
+        // Log admin action
+        await supabase.from('admin_actions').insert({
+            admin_id: req.user?.userId,
+            action: `Granted ${accessType} access to file ${fileId}`,
+            target_user: userId,
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ message: "File access granted", data: data[0] });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to grant file access" });
+    }
+});
+
+// DELETE /api/admin/file-access/:permissionId - Revoke file access (admin only)
+app.delete('/api/admin/file-access/:permissionId', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const permissionId = Array.isArray(req.params.permissionId) ? req.params.permissionId[0] : req.params.permissionId;
+
+        const { data: permission, error: fetchError } = await supabase
+            .from('file_access_permission')
+            .select('*')
+            .eq('permission_id', permissionId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const { error: deleteError } = await supabase
+            .from('file_access_permission')
+            .delete()
+            .eq('permission_id', permissionId);
+
+        if (deleteError) throw deleteError;
+
+        // Log admin action
+        await supabase.from('admin_actions').insert({
+            admin_id: req.user?.userId,
+            action: `Revoked file access`,
+            target_user: permission.user_id,
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ message: "File access revoked" });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to revoke file access" });
+    }
+});
+
+// ===== ANOMALY DETECTION ENDPOINTS =====
+
+// GET /api/ml/user-behavior/:userId - Get user behavior profile
+app.get('/api/ml/user-behavior/:userId', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        const userId = Array.isArray(req.params.userId) ? parseInt(req.params.userId[0]) : parseInt(req.params.userId);
+        const days = req.query.days ? parseInt(req.query.days as string) : 30;
+
+        // Only allow users to view their own data, or admins
+        if (req.user?.userId !== userId && req.user?.role !== 'admin') {
+            return res.status(403).json({ error: "Access denied" });
+        }
+
+        const profile = await getUserBehaviorProfile(userId, days);
+        res.json(profile);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch user behavior profile" });
+    }
+});
+
+// POST /api/ml/test-anomaly - Test anomaly detection
+app.post('/api/ml/test-anomaly', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const { userId, ipAddress } = req.body;
+
+        if (!userId || !ipAddress) {
+            return res.status(400).json({ error: "userId and ipAddress are required" });
+        }
+
+        console.log(`[TEST] Testing anomaly detection for user ${userId} from IP ${ipAddress}`);
+        const anomalyScore = await detectAnomalyOnLogin(userId, ipAddress);
+
+        res.json({
+            message: "Anomaly detection test completed",
+            result: anomalyScore
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to test anomaly detection" });
+    }
+});
+
+// GET /api/ml/alerts - Get security alerts (admin only)
+app.get('/api/ml/alerts', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+        const status = req.query.status as string || 'all';
+
+        let query = supabase
+            .from('alerts')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (status !== 'all') {
+            query = query.eq('status', status);
+        }
+
+        const { data: alerts, error } = await query;
+
+        if (error) throw error;
+
+        res.json({
+            count: alerts?.length || 0,
+            alerts: alerts || []
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch alerts" });
+    }
+});
+
+// PUT /api/ml/alerts/:alertId - Update alert status (admin only)
+app.put('/api/ml/alerts/:alertId', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const alertId = Array.isArray(req.params.alertId) ? req.params.alertId[0] : req.params.alertId;
+        const { status } = req.body;
+
+        if (!['open', 'investigating', 'resolved', 'false_alarm'].includes(status)) {
+            return res.status(400).json({ error: "Invalid status" });
+        }
+
+        const { data, error } = await supabase
+            .from('alerts')
+            .update({ status })
+            .eq('alert_id', alertId)
+            .select();
+
+        if (error) throw error;
+
+        res.json({ message: "Alert updated", data: data[0] });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to update alert" });
+    }
+});
+
+// GET /api/ml/dashboard - ML Dashboard data (admin only)
+app.get('/api/ml/dashboard', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        // Get recent alerts with user info
+        const { data: recentAlerts, error: alertsError } = await supabase
+            .from('alerts')
+            .select('alert_id, user_id, alert_type, risk_score, description, created_at, status')
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        if (alertsError) {
+            console.error('[ML_DASHBOARD] Alerts fetch error:', alertsError);
+            throw alertsError;
+        }
+
+        // Get alert statistics
+        const { data: allAlerts, error: statsError } = await supabase
+            .from('alerts')
+            .select('status, risk_score')
+            .order('created_at', { ascending: false });
+
+        if (statsError) {
+            console.error('[ML_DASHBOARD] Stats fetch error:', statsError);
+            throw statsError;
+        }
+
+        // Get failed logins in last 24 hours
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data: failedLogins, error: failedError } = await supabase
+            .from('login_logs')
+            .select('log_id, user_id, ip_address, login_time, success')
+            .eq('success', false)
+            .gte('login_time', twentyFourHoursAgo)
+            .limit(10);
+
+        if (failedError) {
+            console.error('[ML_DASHBOARD] Failed logins fetch error:', failedError);
+            throw failedError;
+        }
+
+        // Calculate statistics
+        const stats = {
+            total_alerts: allAlerts?.length || 0,
+            open_alerts: allAlerts?.filter((a: any) => a.status === 'open').length || 0,
+            critical_alerts: allAlerts?.filter((a: any) => a.risk_score > 0.75).length || 0,
+            failed_logins_24h: failedLogins?.length || 0,
+            avg_risk_score: allAlerts?.length ? 
+                ((allAlerts as any[]).reduce((sum, a) => sum + (a.risk_score || 0), 0) / allAlerts.length).toFixed(2) : 
+                '0'
+        };
+
+        console.log('[ML_DASHBOARD] Data fetched successfully:', stats);
+
+        res.json({
+            stats,
+            recent_alerts: recentAlerts || [],
+            suspicious_logins: failedLogins || []
+        });
+    } catch (error) {
+        console.error('[ML_DASHBOARD] Error:', error);
+        res.status(500).json({ 
+            error: "Failed to fetch ML dashboard data",
+            details: error instanceof Error ? error.message : String(error)
+        });
     }
 });
 
