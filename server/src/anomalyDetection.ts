@@ -9,6 +9,8 @@
  */
 
 import { supabase } from './supabaseClient';
+import { spawn } from 'child_process';
+import path from 'path';
 
 interface UserBehaviorFeatures {
     userId: number;
@@ -25,6 +27,13 @@ interface AnomalyScore {
     isAnomaly: boolean; // true if score > threshold
     risk_level: 'low' | 'medium' | 'high' | 'critical';
     factors: string[];
+}
+
+interface PythonModelResult {
+    anomalyScore: number;
+    isAnomaly: boolean;
+    risk_level?: 'low' | 'medium' | 'high' | 'critical';
+    factors?: string[];
 }
 
 // Isolation Forest implementation (simplified)
@@ -132,6 +141,98 @@ class AnomalyDetector {
     }
 }
 
+function getRiskLevel(score: number): 'low' | 'medium' | 'high' | 'critical' {
+    if (score < 0.3) return 'low';
+    if (score < 0.5) return 'medium';
+    if (score < 0.75) return 'high';
+    return 'critical';
+}
+
+function deriveFactors(features: UserBehaviorFeatures): string[] {
+    const factors: string[] = [];
+    if (features.loginHour < 6 || features.loginHour > 22) {
+        factors.push(`Unusual login time: ${features.loginHour}:00`);
+    }
+    if (features.failedAttempts > 0) {
+        factors.push(`${features.failedAttempts} failed login attempts`);
+    }
+    if (features.deviceChange > 0) {
+        factors.push('New device or browser detected');
+    }
+    return factors;
+}
+
+function runPythonModel(features: UserBehaviorFeatures, cmd: string, cmdArgs: string[]): Promise<PythonModelResult> {
+    return new Promise((resolve, reject) => {
+        const scriptPath = path.resolve(__dirname, 'ml', 'isolation_forest.py');
+        const child = spawn(cmd, [...cmdArgs, scriptPath], {
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
+
+        child.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        child.on('error', (error) => {
+            reject(error);
+        });
+
+        child.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(stderr || `Python process exited with code ${code}`));
+                return;
+            }
+            try {
+                const parsed = JSON.parse(stdout.trim()) as PythonModelResult;
+                resolve(parsed);
+            } catch (parseError) {
+                reject(new Error(`Invalid JSON output from Python model: ${stdout}`));
+            }
+        });
+
+        child.stdin.write(JSON.stringify(features));
+        child.stdin.end();
+    });
+}
+
+async function scoreWithPythonIsolationForest(features: UserBehaviorFeatures): Promise<AnomalyScore> {
+    const candidates: Array<{ cmd: string; args: string[] }> = [];
+
+    if (process.env.PYTHON_CMD) {
+        candidates.push({ cmd: process.env.PYTHON_CMD, args: [] });
+    }
+    candidates.push({ cmd: 'python', args: [] });
+    candidates.push({ cmd: 'py', args: ['-3'] });
+
+    let lastError: unknown = null;
+
+    for (const candidate of candidates) {
+        try {
+            const result = await runPythonModel(features, candidate.cmd, candidate.args);
+            const safeScore = Math.max(0, Math.min(1, Number(result.anomalyScore) || 0));
+            return {
+                userId: features.userId,
+                anomalyScore: safeScore,
+                isAnomaly: Boolean(result.isAnomaly),
+                risk_level: result.risk_level || getRiskLevel(safeScore),
+                factors: result.factors && result.factors.length > 0 ? result.factors : deriveFactors(features)
+            };
+        } catch (error) {
+            lastError = error;
+            console.warn(`[ANOMALY] Python model command failed: ${candidate.cmd} ${candidate.args.join(' ')}`);
+        }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('Python model execution failed');
+}
+
 /**
  * Process login event and detect anomalies
  */
@@ -141,7 +242,6 @@ export async function detectAnomalyOnLogin(
     userAgent?: string
 ): Promise<AnomalyScore> {
     try {
-        const detector = new AnomalyDetector();
         const now = new Date();
         const hour = now.getHours();
 
@@ -186,9 +286,17 @@ export async function detectAnomalyOnLogin(
 
         console.log('[ANOMALY] Features extracted:', features);
 
-        // Calculate anomaly score
-        const anomalyScore = detector.calculateAnomalyScore(features);
-        console.log('[ANOMALY] Anomaly score calculated:', anomalyScore);
+        // Prefer Python Isolation Forest model; fallback to TypeScript heuristics.
+        let anomalyScore: AnomalyScore;
+        try {
+            anomalyScore = await scoreWithPythonIsolationForest(features);
+            console.log('[ANOMALY] Python Isolation Forest score:', anomalyScore);
+        } catch (pythonError) {
+            console.warn('[ANOMALY] Python model unavailable, using TypeScript fallback:', pythonError);
+            const detector = new AnomalyDetector();
+            anomalyScore = detector.calculateAnomalyScore(features);
+            console.log('[ANOMALY] TypeScript fallback score:', anomalyScore);
+        }
 
         // If anomaly detected, create alert
         if (anomalyScore.isAnomaly) {

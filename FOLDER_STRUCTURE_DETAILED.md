@@ -1,206 +1,150 @@
-# Project Folder Structure - Detailed Documentation
+# AI-Secure File Sharing System - Folder Structure
 
-## 📁 Root Level Files & Directories
+## 📋 Quick Overview
 
 ```
-AI-based-Secure-file-sharing-and-storing-System/
-├── Frontend Configuration & Build Files
-├── Backend Server Directory
-├── Public Assets
-├── Source Code (Frontend)
-├── Version Control & Documentation
-└── Dependencies & Build Output
+project/
+├── 🔧 Root Config Files (Build, TypeScript, Tailwind, ESLint)
+├── 📁 /src → Frontend React App (React + TypeScript + Tailwind)
+├── 📁 /server → Backend Express + Supabase Database
+├── 📁 /public → Static Assets
+└── 📁 /node_modules → Dependencies (auto-generated)
 ```
 
 ---
 
-## 📋 Detailed Structure
+## 🔧 Root Configuration Files (Frontend Setup)
 
-### 🔧 Configuration Files (Root)
-
-| File                 | Purpose                             |
-| -------------------- | ----------------------------------- |
-| `package.json`       | Frontend dependencies & npm scripts |
-| `package-lock.json`  | Locked dependency versions          |
-| `tsconfig.json`      | TypeScript configuration (root)     |
-| `tsconfig.app.json`  | TypeScript config for frontend app  |
-| `tsconfig.node.json` | TypeScript config for Node tools    |
-| `.env`               | Environment variables (frontend)    |
-| `.gitignore`         | Git ignore patterns                 |
-| `vite.config.ts`     | Vite build configuration            |
-| `vitest.config.ts`   | Vitest testing configuration        |
-| `eslint.config.js`   | ESLint code quality rules           |
-| `tailwind.config.ts` | Tailwind CSS configuration          |
-| `postcss.config.js`  | PostCSS transformation rules        |
-| `components.json`    | shadcn/ui component registry        |
-| `index.html`         | HTML entry point                    |
-| `vite-env.d.ts`      | Vite environment type definitions   |
+| File                 | Purpose                         |
+| -------------------- | ------------------------------- |
+| `package.json`       | Frontend dependencies & scripts |
+| `tsconfig.json`      | TypeScript settings             |
+| `vite.config.ts`     | Build tool configuration        |
+| `tailwind.config.ts` | Tailwind CSS setup              |
+| `eslint.config.js`   | Code quality rules              |
+| `vitest.config.ts`   | Testing configuration           |
+| `components.json`    | shadcn/ui components registry   |
+| `postcss.config.js`  | CSS processing                  |
+| `index.html`         | HTML entry point                |
 
 ---
 
-## 📂 Directory Structure
+## 📁 /src - Frontend Application
 
-### 🎨 `/src` - Frontend React Application
-
-**Purpose:** Main frontend application code built with React, TypeScript, and Tailwind CSS
+**Tech Stack:** React + TypeScript + Tailwind CSS + shadcn/ui
 
 ```
 src/
-├── App.tsx                 # Main application component
-├── App.css                 # Global styles
-├── index.css               # Base styles
-├── main.tsx                # React entry point
-├── vite-env.d.ts           # Vite type definitions
+├── App.tsx, main.tsx       # App entry points
+├── App.css, index.css      # Global styles
 │
-├── components/             # Reusable React components
-│   ├── mode-toggle.tsx     # Dark/Light mode switcher
-│   ├── NavLink.tsx         # Navigation link component
-│   ├── theme-provider.tsx  # Theme context provider
-│   ├── alerts/
-│   │   └── AlertItem.tsx   # Individual alert display
-│   ├── dashboard/          # Dashboard-specific components
-│   │   ├── RecentActivity.tsx      # Activity feed component
-│   │   ├── SecurityStatus.tsx      # Security status widget
-│   │   └── StatCard.tsx            # Statistics cards
-│   ├── files/              # File management components
-│   │   ├── FileCard.tsx    # Single file display
-│   │   └── FileUpload.tsx  # File upload interface
-│   ├── layout/             # Layout components
-│   │   ├── DashboardLayout.tsx     # Main layout wrapper
-│   │   ├── Navbar.tsx              # Top navigation bar
-│   │   ├── ProtectedRoute.tsx      # Route protection wrapper
-│   │   └── Sidebar.tsx             # Left sidebar navigation
-│   └── ui/                 # shadcn/ui components (25+ files)
-│       ├── button.tsx, card.tsx, input.tsx, ... (UI library)
-│       └── [Other UI components for forms, dialogs, etc.]
+├── components/             # Reusable Components
+│   ├── layout/             # DashboardLayout, Navbar, Sidebar, ProtectedRoute
+│   ├── dashboard/          # RecentActivity, SecurityStatus, StatCard
+│   ├── files/              # FileCard, FileUpload
+│   ├── alerts/             # AlertItem
+│   ├── ui/                 # shadcn/ui components (25+)
+│   ├── mode-toggle.tsx     # Dark/Light mode
+│   ├── NavLink.tsx         # Navigation links
+│   └── theme-provider.tsx  # Theme provider
 │
-├── context/                # React Context providers
-│   └── AuthContext.tsx     # Authentication state management
+├── pages/                  # Page Components (Routes)
+│   ├── Login, Register, ForgotPassword
+│   ├── Dashboard, MyFiles, SharedFiles, Files
+│   ├── AdminDashboard, ManageUsers, Users, AccessControl
+│   ├── Profile, Settings, SecuritySettings
+│   ├── MlDashboard, MLInfo
+│   ├── Activity, AuditLogs, Alerts
+│   ├── DatabaseMonitor, Contact, FAQ
+│   ├── Index (Landing), NotFound
+│   └── ... (Total: 25+ pages)
 │
-├── hooks/                  # Custom React hooks
-│   ├── use-mobile.tsx      # Mobile device detection
-│   └── use-toast.ts        # Toast notification hook
+├── context/                # State Management
+│   └── AuthContext.tsx     # Authentication context
 │
-├── lib/                    # Utility functions & helpers
-│   ├── authFetch.ts        # API requests with auth headers
-│   └── utils.ts            # Utility functions
+├── hooks/                  # Custom Hooks
+│   ├── use-mobile.tsx      # Responsive detection
+│   └── use-toast.ts        # Toast notifications
 │
-├── pages/                  # Page components (routes)
-│   ├── AccessControl.tsx        # User access control page
-│   ├── Activity.tsx             # Activity log page
-│   ├── AdminDashboard.tsx       # Admin dashboard
-│   ├── Alerts.tsx               # Alerts page
-│   ├── AuditLogs.tsx            # Audit trail page
-│   ├── Contact.tsx              # Contact page
-│   ├── Dashboard.tsx            # Main dashboard (with storage stats)
-│   ├── DatabaseMonitor.tsx      # Database monitoring page
-│   ├── FAQ.tsx                  # FAQ page
-│   ├── Files.tsx                # File listing page
-│   ├── ForgotPassword.tsx       # Password reset page
-│   ├── Index.tsx                # Landing page
-│   ├── Login.tsx                # Login page
-│   ├── ManageUsers.tsx          # User management page
-│   ├── MlDashboard.tsx          # ML analytics dashboard
-│   ├── MLInfo.tsx               # ML information page
-│   ├── MyFiles.tsx              # User's files page
-│   ├── NotFound.tsx             # 404 page
-│   ├── Profile.tsx              # User profile page
-│   ├── Register.tsx             # Registration page
-│   ├── SecuritySettings.tsx     # Security settings page
-│   ├── Settings.tsx             # General settings page
-│   ├── SharedFiles.tsx          # Shared files page
-│   └── Users.tsx                # Users list page
+├── lib/                    # Utilities
+│   ├── authFetch.ts        # API calls with authentication
+│   └── utils.ts            # Helper functions
 │
-└── test/                   # Testing files
-    ├── example.test.ts     # Example test
-    └── setup.ts            # Test setup / configuration
+└── test/                   # Testing
+    ├── example.test.ts
+    └── setup.ts
 ```
 
 ---
 
-### 🖥️ `/server` - Backend Express Server
+## 🖥️ /server - Backend API
 
-**Purpose:** RESTful API server with file management, authentication, and email services
+**Tech Stack:** Express + TypeScript + Supabase PostgreSQL
 
 ```
 server/
-├── package.json            # Backend dependencies (nodemailer, bcryptjs, jwt, etc.)
-├── tsconfig.json           # TypeScript config for backend
-├── .env                    # Backend environment variables
-│                           # (EMAIL_SERVICE, EMAIL_USER, EMAIL_PASSWORD, etc.)
+├── package.json            # Backend dependencies (express, supabase, nodemailer, etc.)
+├── tsconfig.json           # TypeScript config
 │
-├── src/                    # Backend source code
-│   ├── index.ts            # Main Express server file
-│   │                        # Contains:
-│   │                        # - Email transporter configuration
-│   │                        # - Registration endpoint (with email sending)
-│   │                        # - File upload/download endpoints
-│   │                        # - Authentication middleware
-│   │                        # - Admin endpoints
+├── src/
+│   ├── index.ts            # Main server + API endpoints
+│   │                        # - File upload/download
+│   │                        # - User registration with email
+│   │                        # - Authentication endpoints
+│   │                        # - Admin operations
 │   │
-│   ├── middleware.ts       # Custom Express middleware
-│   │                        # - JWT authentication
-│   │                        # - Admin-only routes
-│   │                        # - Error handling
-│   │
-│   ├── supabaseClient.ts   # Supabase PostgreSQL client initialization
-│   ├── setupDatabase.ts    # Database schema initialization
-│   ├── seedAllTables.ts    # Database seeding script
-│   ├── seedAdmins.ts       # Admin user creation script
-│   ├── setAdmins.ts        # Admin permission script
-│   ├── debugTables.ts      # Database debugging utility
-│   └── test_isolation.js   # Test isolation configuration
+│   ├── middleware.ts       # JWT auth, error handling, admin verification
+│   ├── supabaseClient.ts   # Database connection
+│   ├── setupDatabase.ts    # Schema initialization
+│   ├── seedAllTables.ts    # Database seeding
+│   ├── seedAdmins.ts       # Admin user setup
+│   ├── setAdmins.ts        # Admin permissions
+│   ├── debugTables.ts      # Debug utility
+│   ├── anomalyDetection.ts # ML anomaly detection
+│   └── test_isolation.js   # Test configuration
 │
-├── uploads/                # File storage directory
-│   └── [Encrypted user files stored here]
-│
-└── schema.sql              # Database schema (SQL definitions)
+├── uploads/                # File storage (encrypted user files)
+├── schema.sql              # Database schema
+└── .env                    # Environment variables (emails, keys, etc.)
 ```
 
 ---
 
-### 📚 `/public` - Static Assets
+## 📚 Other Directories
 
-```
-public/
-└── robots.txt              # SEO robots configuration
-```
-
----
-
-### 📦 `/dist` - Build Output
-
-```
-dist/                       # Production build (auto-generated)
-├── index.html
-├── assets/
-│   ├── *.js                # Compiled JavaScript chunks
-│   ├── *.css               # Compiled CSS chunks
-│   └── [Other assets]
-└── [Compiled frontend code]
-```
+| Directory       | Contains                                  |
+| --------------- | ----------------------------------------- |
+| `/public`       | Static assets (robots.txt)                |
+| `/dist`         | Production build output (auto-generated)  |
+| `/node_modules` | npm packages (auto-generated, not in git) |
+| `/.git`         | Git version control                       |
 
 ---
 
-### 🔒 `/node_modules` - Dependencies
+## 🎯 File Organization Summary
 
-```
-node_modules/              # npm packages (auto-generated, not in git)
-├── react, react-dom, ...   # Core dependencies
-├── express, cors, ...      # Backend dependencies
-└── [600+ packages total]
-```
+| Category          | Location                                  | Purpose                                            |
+| ----------------- | ----------------------------------------- | -------------------------------------------------- |
+| **Pages**         | `/src/pages/`                             | User-facing routes (Login, Dashboard, Files, etc.) |
+| **Components**    | `/src/components/`                        | Reusable UI pieces (buttons, cards, forms, etc.)   |
+| **Backend Logic** | `/server/src/`                            | API, database, authentication                      |
+| **Styling**       | `/src/App.css`, `tailwind.config.ts`      | Global & Tailwind styles                           |
+| **Config**        | Root directory                            | Build, TypeScript, ESLint settings                 |
+| **Database**      | `/server/schema.sql`                      | Table definitions                                  |
+| **Testing**       | `/src/test/`, `/server/test_isolation.js` | Unit & integration tests                           |
 
 ---
 
-### 🐙 `/.git & /.github` - Version Control
+## 🚀 Quick Start
 
-```
-.git/                       # Git repository data
-└── [Version history]
+1. **Frontend:** `npm install && npm run dev`
+2. **Backend:** `cd server && npm install && npm run dev`
+3. **Build:** `npm run build`
+4. **Deploy:** Push to GitHub, deploy with GitHub Pages (frontend) + Vercel/Railway (backend)
 
-.github/                    # GitHub configuration
+.github/ # GitHub configuration
 └── [GitHub workflows/templates if any]
+
 ```
 
 ---
@@ -251,18 +195,22 @@ node_modules/              # npm packages (auto-generated, not in git)
 ### Frontend Build
 
 ```
-npm run build       → Compiles React to /dist
-npm run dev         → Dev server on port 8080 (Vite)
-npm run preview     → Preview production build
-npm test            → Run Vitest tests
+
+npm run build → Compiles React to /dist
+npm run dev → Dev server on port 8080 (Vite)
+npm run preview → Preview production build
+npm test → Run Vitest tests
+
 ```
 
 ### Backend Build
 
 ```
+
 cd server
-npm install         → Install dependencies
-npm start           → Run server on port 3001 (ts-node)
+npm install → Install dependencies
+npm start → Run server on port 3001 (ts-node)
+
 ```
 
 ---
@@ -296,7 +244,7 @@ npm start           → Run server on port 3001 (ts-node)
 
 ---
 
-**Generated:** March 18, 2026
 **Project:** AI-based Secure File Sharing and Storing System
 **Frontend:** React + TypeScript + Tailwind CSS
 **Backend:** Express.js + PostgreSQL + Nodemailer
+```
