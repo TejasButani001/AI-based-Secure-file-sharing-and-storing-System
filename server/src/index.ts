@@ -6,7 +6,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
-import path from 'path';
 import { authMiddleware, adminOnly, AuthRequest } from './middleware';
 import { OAuth2Client } from 'google-auth-library';
 import nodemailer from 'nodemailer';
@@ -113,22 +112,8 @@ const sendRegistrationEmail = async (email: string, username: string, appName: s
     }
 };
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Multer Config
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname);
-    }
-});
+// Multer config: keep files in memory, then persist file bytes in database.
+const storage = multer.memoryStorage();
 // Allowed File Types
 const allowedMimeTypes = [
     'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -221,24 +206,8 @@ app.get('/api/stats', authMiddleware, async (req: AuthRequest, res) => {
                     totalFileSize += file.size;
                     console.log(`[STATS] Using DB size: ${file.size}, total now: ${totalFileSize}`);
                 } else if (file.encrypted_path) {
-                    // If size is missing, try to get it from filesystem
-                    try {
-                        const stats = fs.statSync(file.encrypted_path);
-                        console.log(`[STATS] File from disk: ${file.encrypted_path}, size: ${stats.size}`);
-                        totalFileSize += stats.size;
-                        // Update the database with the correct size
-                        try {
-                            await supabase
-                                .from('files')
-                                .update({ size: stats.size })
-                                .eq('file_id', file.file_id);
-                        } catch (updateErr) {
-                            console.error(`Could not update file size in DB:`, updateErr);
-                        }
-                    } catch (err) {
-                        // File doesn't exist or can't be read, skip it
-                        console.error(`Could not read file size for ${file.encrypted_path}:`, err);
-                    }
+                    // Legacy rows may miss size; skip filesystem fallback because files are DB-backed.
+                    console.log(`[STATS] Missing size for file_id=${file.file_id}, path marker=${file.encrypted_path}`);
                 }
             }
         } else {
@@ -530,39 +499,54 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
             return res.status(401).json({ error: 'Unauthorized: No user ID attached to session' });
         }
 
-        // Get actual file size from disk
-        let actualFileSize = req.file.size;
-        try {
-            const stats = fs.statSync(req.file.path);
-            actualFileSize = stats.size;
-            console.log(`[UPLOAD] File: ${req.file.originalname}, Multer size: ${req.file.size}, Disk size: ${actualFileSize}`);
-        } catch (err) {
-            console.error(`[UPLOAD] Could not stat file: ${req.file.path}`, err);
-        }
+        const fileSize = req.file.size;
+        const mimeType = req.file.mimetype;
+        const fileDataBase64 = req.file.buffer.toString('base64');
 
-        // We attempt to insert description. If it fails due to missing column, we fallback to without it.
-        // It's better to ensure the schema has description: `ALTER TABLE files ADD COLUMN description TEXT;`
-        let insertData: any = {
+        const insertData: Record<string, unknown> = {
             file_name: req.file.originalname,
-            encrypted_path: req.file.path,
-            size: actualFileSize,
+            encrypted_path: 'db://inline',
+            size: fileSize,
             checksum: "checksum_placeholder",
             owner_id: ownerId,
-            upload_time: new Date().toISOString()
+            upload_time: new Date().toISOString(),
+            mime_type: mimeType,
+            file_data: fileDataBase64
         };
 
-        // Try to add description if column was successfully created by admin
+        // If description column exists, save it; otherwise continue without it.
         try {
             insertData.description = description;
             const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
             if (error) throw error;
             return res.json({ message: 'File uploaded successfully', file });
-        } catch (e: any) {
-            // Fallback if description column doesn't exist yet
+        } catch {
+            // Fallback if description column does not exist.
             delete insertData.description;
-            const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
-            if (error) throw error;
-            return res.json({ message: 'File uploaded successfully (without description)', file });
+            try {
+                const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
+                if (error) throw error;
+                return res.json({ message: 'File uploaded successfully', file });
+            } catch {
+                // Legacy schema fallback: persist base64 payload in encrypted_path when mime/file_data columns are absent.
+                const legacyInsertData: Record<string, unknown> = {
+                    file_name: req.file.originalname,
+                    encrypted_path: `db64:${fileDataBase64}`,
+                    size: fileSize,
+                    checksum: `mime:${mimeType}`,
+                    owner_id: ownerId,
+                    upload_time: new Date().toISOString()
+                };
+
+                const { data: legacyFile, error: legacyError } = await supabase
+                    .from('files')
+                    .insert(legacyInsertData)
+                    .select()
+                    .single();
+
+                if (legacyError) throw legacyError;
+                return res.json({ message: 'File uploaded successfully', file: legacyFile });
+            }
         }
 
     } catch (error) {
@@ -594,14 +578,50 @@ app.get('/api/files', authMiddleware, async (req: AuthRequest, res) => {
     }
 });
 
-// GET /api/files/:fileId/download - Download a file
-app.get('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest, res) => {
+// GET /api/files/:fileId/download - Legacy endpoint (password is required via POST)
+app.get('/api/files/:fileId/download', authMiddleware, async (_req: AuthRequest, res) => {
+    return res.status(405).json({ error: 'Use POST /api/files/:fileId/download with password' });
+});
+
+// POST /api/files/:fileId/download - Password-protected download
+app.post('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest, res) => {
     try {
         if (!req.user) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const fileId = req.params.fileId;
+        const { password } = req.body as { password?: string };
+
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({ error: 'Password is required for download' });
+        }
+
+        // Validate current user's password before allowing download.
+        const { data: currentUser, error: currentUserError } = await supabase
+            .from('users')
+            .select('user_id, password_hash, role')
+            .eq('user_id', req.user.userId)
+            .single();
+
+        if (currentUserError || !currentUser) {
+            return res.status(401).json({ error: 'Invalid user session' });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, currentUser.password_hash);
+        if (!isPasswordValid) {
+            try {
+                await supabase.from('access_logs').insert({
+                    user_id: req.user.userId,
+                    file_id: fileId,
+                    action: 'download_denied_password',
+                    timestamp: new Date().toISOString()
+                });
+            } catch (logError) {
+                console.error('Failed to log denied download:', logError);
+            }
+            return res.status(403).json({ error: 'Incorrect password. Download denied.' });
+        }
 
         // Get file from database
         const { data: file, error } = await supabase
@@ -619,10 +639,33 @@ app.get('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest, 
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        // Check if file exists on disk
-        const filePath = file.encrypted_path;
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: 'File not found on server' });
+        // Persist file permission for this user if it does not exist yet.
+        const { data: existingPermission, error: permissionFetchError } = await supabase
+            .from('file_access_permission')
+            .select('permission_id, access_type')
+            .eq('file_id', fileId)
+            .eq('user_id', req.user.userId)
+            .maybeSingle();
+
+        if (permissionFetchError) {
+            console.error('Failed to fetch file permission:', permissionFetchError);
+            return res.status(500).json({ error: 'Failed to verify file permission' });
+        }
+
+        const desiredAccessType = req.user.role === 'admin' ? 'admin' : 'read';
+        if (!existingPermission) {
+            const { error: permissionInsertError } = await supabase
+                .from('file_access_permission')
+                .insert({
+                    file_id: fileId,
+                    user_id: req.user.userId,
+                    access_type: desiredAccessType,
+                });
+
+            if (permissionInsertError) {
+                console.error('Failed to store file permission:', permissionInsertError);
+                return res.status(500).json({ error: 'Failed to store file permission' });
+            }
         }
 
         // Record download in access logs
@@ -631,15 +674,40 @@ app.get('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest, 
                 user_id: req.user.userId,
                 file_id: fileId,
                 action: 'download',
-                access_time: new Date().toISOString(),
-                ip_address: req.ip || '0.0.0.0'
+                timestamp: new Date().toISOString()
             });
         } catch (logError) {
             console.error("Failed to log access:", logError);
         }
 
-        // Send file
-        res.download(filePath, file.file_name);
+        // Primary path: DB-backed file storage.
+        if (file.file_data) {
+            const fileBuffer = Buffer.from(file.file_data, 'base64');
+            const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+            res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+            return res.send(fileBuffer);
+        }
+
+        // Legacy DB-inline fallback: file payload stored inside encrypted_path with db64 prefix.
+        if (typeof file.encrypted_path === 'string' && file.encrypted_path.startsWith('db64:')) {
+            const legacyBase64 = file.encrypted_path.slice(5);
+            const fileBuffer = Buffer.from(legacyBase64, 'base64');
+            const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+            const legacyMime = typeof file.checksum === 'string' && file.checksum.startsWith('mime:')
+                ? file.checksum.slice(5)
+                : 'application/octet-stream';
+            res.setHeader('Content-Type', legacyMime);
+            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+            return res.send(fileBuffer);
+        }
+
+        // Backward compatibility path: legacy rows that stored a filesystem path.
+        if (file.encrypted_path && !String(file.encrypted_path).startsWith('db://inline') && fs.existsSync(file.encrypted_path)) {
+            return res.download(file.encrypted_path, file.file_name);
+        }
+
+        return res.status(404).json({ error: 'File data is not available for download' });
     } catch (error) {
         console.error('Download error:', error);
         res.status(500).json({ error: 'Download failed' });
@@ -671,17 +739,6 @@ app.delete('/api/files/:fileId', authMiddleware, async (req: AuthRequest, res) =
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        // Delete file from disk if it exists
-        const filePath = file.encrypted_path;
-        if (fs.existsSync(filePath)) {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (fileError) {
-                console.error('Error deleting file from disk:', fileError);
-                // Continue with database deletion even if file deletion fails
-            }
-        }
-
         // Delete from database
         const { error: deleteError } = await supabase
             .from('files')
@@ -696,12 +753,9 @@ app.delete('/api/files/:fileId', authMiddleware, async (req: AuthRequest, res) =
         try {
             await supabase.from('audit_trail').insert({
                 user_id: req.user.userId,
-                action: 'file_deleted',
-                resource_type: 'file',
-                resource_id: fileId,
+                event: 'file_deleted',
                 details: `Deleted file: ${file.file_name}`,
                 event_time: new Date().toISOString(),
-                ip_address: req.ip || '0.0.0.0'
             });
         } catch (auditError) {
             console.error("Failed to log audit:", auditError);
@@ -1077,6 +1131,90 @@ app.get('/api/ml/alerts', authMiddleware, adminOnly, async (req: AuthRequest, re
         });
     } catch (error) {
         res.status(500).json({ error: "Failed to fetch alerts" });
+    }
+});
+
+// GET /api/alerts - Get user's own alerts (authenticated users)
+app.get('/api/alerts', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        const userId = req.user?.userId;
+        console.log('GET /api/alerts - userId:', userId);
+        
+        if (!userId) {
+            console.log('GET /api/alerts - No userId found');
+            return res.status(401).json({ error: "Unauthorized - no user ID" });
+        }
+
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+        const status = req.query.status as string | undefined;
+
+        console.log('GET /api/alerts - Fetching alerts for userId:', userId, 'limit:', limit, 'status:', status);
+
+        let query = supabase
+            .from('alerts')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (status) {
+            query = query.eq('status', status);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.log('GET /api/alerts - Database error:', error);
+            throw error;
+        }
+
+        console.log('GET /api/alerts - Success! Returning', (data || []).length, 'alerts');
+        res.json({ alerts: data || [] });
+    } catch (error) {
+        console.error('Error fetching alerts:', error);
+        res.status(500).json({ error: "Failed to fetch alerts", details: error instanceof Error ? error.message : String(error) });
+    }
+});
+
+// PUT /api/alerts/:alertId - Update own alert status (authenticated users)
+app.put('/api/alerts/:alertId', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const alertId = Array.isArray(req.params.alertId) ? req.params.alertId[0] : req.params.alertId;
+        const { status } = req.body;
+
+        if (!['open', 'investigating', 'resolved', 'dismissed'].includes(status)) {
+            return res.status(400).json({ error: "Invalid status" });
+        }
+
+        // Verify alert belongs to user
+        const { data: alert, error: checkError } = await supabase
+            .from('alerts')
+            .select('*')
+            .eq('alert_id', alertId)
+            .eq('user_id', userId)
+            .single();
+
+        if (checkError || !alert) {
+            return res.status(403).json({ error: "Alert not found or unauthorized" });
+        }
+
+        const { data, error } = await supabase
+            .from('alerts')
+            .update({ status })
+            .eq('alert_id', alertId)
+            .select();
+
+        if (error) throw error;
+
+        res.json({ message: "Alert updated", data: data[0] });
+    } catch (error) {
+        console.error('Error updating alert:', error);
+        res.status(500).json({ error: "Failed to update alert" });
     }
 });
 

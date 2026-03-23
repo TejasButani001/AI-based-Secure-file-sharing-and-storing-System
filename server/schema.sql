@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS files (
     checksum TEXT
 );
 
+-- For existing databases created before these fields, keep schema in sync.
+ALTER TABLE files ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS mime_type TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS file_data TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_files_owner_id ON files(owner_id);
 CREATE INDEX IF NOT EXISTS idx_files_upload_time ON files(upload_time DESC);
 

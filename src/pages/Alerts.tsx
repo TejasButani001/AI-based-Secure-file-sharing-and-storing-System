@@ -1,60 +1,213 @@
-import { useState } from "react";
-import { Bell, Filter, CheckCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Filter, CheckCheck, Loader2 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AlertItem } from "@/components/alerts/AlertItem";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { authFetch } from "@/lib/authFetch";
 
-const mockAlerts = [
-  {
-    id: "1",
-    severity: "critical" as const,
-    title: "Unauthorized Access Attempt",
-    description: "Multiple failed login attempts detected from IP 192.168.1.105. Account temporarily locked.",
-    time: "5 minutes ago",
-  },
-  {
-    id: "2",
-    severity: "warning" as const,
-    title: "Unusual Download Pattern",
-    description: "User john.doe@company.com downloaded 25 files in the last hour. Review activity.",
-    time: "15 minutes ago",
-  },
-  {
-    id: "3",
-    severity: "info" as const,
-    title: "New Device Logged In",
-    description: "User sarah.m@company.com logged in from a new Windows device in New York.",
-    time: "1 hour ago",
-  },
-  {
-    id: "4",
-    severity: "warning" as const,
-    title: "Password Expiring Soon",
-    description: "3 users have passwords expiring in the next 7 days. Send reminders.",
-    time: "2 hours ago",
-  },
-  {
-    id: "5",
-    severity: "critical" as const,
-    title: "Suspicious File Access",
-    description: "Sensitive file 'HR_Salaries.xlsx' accessed outside business hours.",
-    time: "3 hours ago",
-  },
-];
+interface DatabaseAlert {
+  alert_id: string;
+  user_id: string;
+  alert_type: string;
+  risk_score: number;
+  description: string;
+  created_at: string;
+  status: string;
+}
+
+interface UIAlert {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  time: string;
+}
+
+function formatTimeAgo(dateString: string): string {
+  const now = new Date();
+  const date = new Date(dateString);
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  return `${Math.floor(seconds / 86400)} days ago`;
+}
+
+function mapDatabaseAlertToUI(dbAlert: DatabaseAlert): UIAlert {
+  let severity: "critical" | "warning" | "info";
+  if (dbAlert.risk_score >= 8) {
+    severity = "critical";
+  } else if (dbAlert.risk_score >= 5) {
+    severity = "warning";
+  } else {
+    severity = "info";
+  }
+
+  return {
+    id: dbAlert.alert_id,
+    severity,
+    title: dbAlert.alert_type.replace(/_/g, " "),
+    description: dbAlert.description,
+    time: formatTimeAgo(dbAlert.created_at),
+  };
+}
 
 export default function Alerts() {
-  const [alerts, setAlerts] = useState(mockAlerts);
+  const [alerts, setAlerts] = useState<UIAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  const handleDismiss = (id: string) => {
-    setAlerts(alerts.filter((alert) => alert.id !== id));
+  useEffect(() => {
+    // Check if user is authenticated before fetching
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setLoading(false);
+      toast({
+        title: "Not authenticated",
+        description: "Please log in to view alerts.",
+        variant: "destructive",
+      });
+      return;
+    }
+    fetchAlerts();
+  }, []);
+
+  const fetchAlerts = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast({
+          title: "Authentication lost",
+          description: "Your session has expired. Please log in again.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      const response = await authFetch("/api/alerts?limit=100");
+      
+      if (!response.ok) {
+        let errorDetail = "Unknown error";
+        try {
+          const errorData = await response.json();
+          errorDetail = errorData.error || `HTTP ${response.status}`;
+        } catch (e) {
+          errorDetail = `HTTP ${response.status}`;
+        }
+        throw new Error(`Failed to fetch alerts: ${errorDetail}`);
+      }
+
+      const data = await response.json();
+      const dbAlerts: DatabaseAlert[] = data.alerts || [];
+      const uiAlerts = dbAlerts
+        .filter(a => a.status !== "dismissed")
+        .map(mapDatabaseAlertToUI);
+      
+      setAlerts(uiAlerts);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Error fetching alerts:", errorMessage);
+      toast({
+        title: "Failed to load alerts",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDismissAll = () => {
-    setAlerts([]);
+  const handleDismiss = async (id: string) => {
+    try {
+      // Optimistic update
+      setAlerts(alerts.filter((alert) => alert.id !== id));
+
+      // Persist to backend
+      const response = await authFetch(`/api/alerts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to dismiss alert");
+      }
+
+      toast({
+        title: "Alert dismissed",
+        description: "The alert has been marked as dismissed.",
+      });
+    } catch (error) {
+      console.error("Error dismissing alert:", error);
+      // Refresh to restore state
+      await fetchAlerts();
+      toast({
+        title: "Error",
+        description: "Failed to dismiss alert.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDismissAll = async () => {
+    if (alerts.length === 0) {
+      toast({
+        title: "No alerts",
+        description: "There are no active alerts to dismiss.",
+      });
+      return;
+    }
+
+    try {
+      const alertIds = alerts.map(a => a.id);
+      // Optimistic update
+      setAlerts([]);
+
+      // Persist all dismissals
+      const promises = alertIds.map(id =>
+        authFetch(`/api/alerts/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "dismissed" }),
+        })
+      );
+
+      await Promise.all(promises);
+
+      toast({
+        title: "All alerts dismissed",
+        description: `${alertIds.length} alert(s) have been marked as dismissed.`,
+      });
+    } catch (error) {
+      console.error("Error dismissing all alerts:", error);
+      // Refresh to restore state
+      await fetchAlerts();
+      toast({
+        title: "Error",
+        description: "Failed to dismiss all alerts.",
+        variant: "destructive",
+      });
+    }
   };
 
   const criticalCount = alerts.filter((a) => a.severity === "critical").length;
   const warningCount = alerts.filter((a) => a.severity === "warning").length;
+  const infoCount = alerts.filter((a) => a.severity === "info").length;
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 lg:p-8 flex items-center justify-center min-h-96">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -72,7 +225,7 @@ export default function Alerts() {
               <Filter className="w-4 h-4 mr-2" />
               Filter
             </Button>
-            <Button variant="outline" onClick={handleDismissAll}>
+            <Button variant="outline" onClick={handleDismissAll} disabled={alerts.length === 0}>
               <CheckCheck className="w-4 h-4 mr-2" />
               Dismiss All
             </Button>
@@ -104,7 +257,7 @@ export default function Alerts() {
               <Bell className="w-5 h-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-success">{alerts.length - criticalCount - warningCount}</p>
+              <p className="text-2xl font-bold text-success">{infoCount}</p>
               <p className="text-sm text-muted-foreground">Informational</p>
             </div>
           </div>
@@ -130,3 +283,4 @@ export default function Alerts() {
     </DashboardLayout>
   );
 }
+

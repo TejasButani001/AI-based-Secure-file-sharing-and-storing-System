@@ -18,6 +18,24 @@ interface FileData {
     encrypted: boolean;
 }
 
+const getFileType = (fileName: string, mimeType?: string): FileData["type"] => {
+    const normalizedMime = (mimeType || '').toLowerCase();
+    if (normalizedMime.startsWith('image/')) return 'image';
+    if (
+        normalizedMime.includes('zip') ||
+        normalizedMime.includes('rar') ||
+        normalizedMime.includes('7z')
+    ) {
+        return 'archive';
+    }
+
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) return 'image';
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(extension)) return 'archive';
+    if (['pdf', 'txt', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(extension)) return 'document';
+    return 'other';
+};
+
 export default function MyFiles() {
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
     const [searchQuery, setSearchQuery] = useState("");
@@ -35,9 +53,9 @@ export default function MyFiles() {
                 const data = await res.json();
                 // Map backend data to frontend model
                 const mappedFiles = data.map((f: any) => ({
-                    id: f.file_id || f.id,
+                    id: String(f.file_id || f.id),
                     name: f.file_name || f.filename || 'Unknown File',
-                    type: "document", // Simplified type mapping
+                    type: getFileType(f.file_name || f.filename || '', f.mime_type),
                     size: ((f.size || 0) / 1024).toFixed(1) + " KB",
                     uploadedAt: new Date(f.upload_time || f.createdAt || new Date()).toLocaleDateString(),
                     encrypted: true
@@ -45,15 +63,30 @@ export default function MyFiles() {
                 setFiles(mappedFiles);
             } else {
                 console.error("Failed to fetch files:", res.statusText);
+                toast({ title: "Error", description: "Failed to fetch files", variant: "destructive" });
             }
         } catch (error) {
             console.error("Failed to fetch files", error);
+            toast({ title: "Error", description: "Failed to fetch files", variant: "destructive" });
         }
     };
 
     const handleDownload = async (fileId: string, fileName: string) => {
         try {
-            const res = await authFetch(`/api/files/${fileId}/download`);
+            const password = window.prompt("Enter your account password to download this file:");
+            if (password === null) {
+                return;
+            }
+
+            if (!password.trim()) {
+                toast({ title: "Error", description: "Password is required to download file", variant: "destructive" });
+                return;
+            }
+
+            const res = await authFetch(`/api/files/${fileId}/download`, {
+                method: 'POST',
+                body: JSON.stringify({ password }),
+            });
             if (res.ok) {
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
@@ -66,7 +99,14 @@ export default function MyFiles() {
                 window.URL.revokeObjectURL(url);
                 toast({ title: "Success", description: "File downloaded successfully" });
             } else {
-                toast({ title: "Error", description: "Failed to download file", variant: "destructive" });
+                let errorMessage = "Failed to download file";
+                try {
+                    const errorData = await res.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch {
+                    // Ignore non-JSON error responses and keep default message.
+                }
+                toast({ title: "Error", description: errorMessage, variant: "destructive" });
             }
         } catch (error) {
             console.error("Download error:", error);
@@ -134,7 +174,7 @@ export default function MyFiles() {
 
                 {/* Upload Section */}
                 <div className="mb-8">
-                    <FileUpload /> {/* Note: FileUpload needs to trigger refresh on success? For now, manual refresh */}
+                    <FileUpload onUploadSuccess={fetchFiles} />
                 </div>
 
                 {/* Search and Filters */}

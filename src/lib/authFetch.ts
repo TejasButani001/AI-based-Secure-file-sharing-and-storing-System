@@ -2,8 +2,22 @@
  * Authenticated fetch wrapper.
  * Automatically attaches the JWT token from localStorage to every request.
  */
+
+// Determine API base URL - use full URL if not in development mode or if proxy isn't available
+function getApiBaseUrl(): string {
+    // In development with Vite proxy, use relative URLs
+    if (import.meta.env.DEV) {
+        return '';
+    }
+    // In production, use absolute URL to backend
+    return 'http://localhost:3001';
+}
+
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = localStorage.getItem('token');
+    
+    // Build full URL if needed
+    const fullUrl = url.startsWith('http') ? url : `${getApiBaseUrl()}${url}`;
 
     const headers: Record<string, string> = {
         ...(options.headers as Record<string, string> || {}),
@@ -18,7 +32,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
         headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     }
 
-    const response = await fetch(url, {
+    const response = await fetch(fullUrl, {
         ...options,
         headers,
     });
@@ -36,3 +50,4 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 
     return response;
 }
+

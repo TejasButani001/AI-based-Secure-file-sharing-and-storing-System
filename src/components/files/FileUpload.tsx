@@ -16,7 +16,12 @@ const ALLOWED_TYPES = [
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ];
-export function FileUpload() {
+
+interface FileUploadProps {
+  onUploadSuccess?: () => void;
+}
+
+export function FileUpload({ onUploadSuccess }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [description, setDescription] = useState("");
@@ -97,6 +102,7 @@ export function FileUpload() {
         });
         setSelectedFile(null);
         setDescription("");
+        onUploadSuccess?.();
       } else {
         const errorData = await res.json();
         toast({
