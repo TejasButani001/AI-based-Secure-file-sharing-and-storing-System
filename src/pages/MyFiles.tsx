@@ -8,6 +8,12 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { authFetch } from "@/lib/authFetch";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface FileData {
     id: string;
@@ -40,6 +46,9 @@ export default function MyFiles() {
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
     const [searchQuery, setSearchQuery] = useState("");
     const [files, setFiles] = useState<FileData[]>([]);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewType, setPreviewType] = useState<string | null>(null);
+    const [previewName, setPreviewName] = useState<string | null>(null);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -111,6 +120,39 @@ export default function MyFiles() {
         } catch (error) {
             console.error("Download error:", error);
             toast({ title: "Error", description: "Failed to download file", variant: "destructive" });
+        }
+    };
+
+    const handlePreview = async (fileId: string, fileName: string, type: string) => {
+        try {
+            const password = window.prompt("Enter your account password to preview this file:");
+            if (password === null) return;
+            if (!password.trim()) {
+                toast({ title: "Error", description: "Password is required to preview file", variant: "destructive" });
+                return;
+            }
+
+            const res = await authFetch(`/api/files/${fileId}/download`, {
+                method: 'POST',
+                body: JSON.stringify({ password }),
+            });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                setPreviewUrl(url);
+                setPreviewType(type);
+                setPreviewName(fileName);
+            } else {
+                let errorMessage = "Failed to preview file";
+                try {
+                    const errorData = await res.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch {}
+                toast({ title: "Error", description: errorMessage, variant: "destructive" });
+            }
+        } catch (error) {
+            console.error("Preview error:", error);
+            toast({ title: "Error", description: "Failed to preview file", variant: "destructive" });
         }
     };
 
@@ -232,6 +274,7 @@ export default function MyFiles() {
                         <FileCard 
                             key={file.id} 
                             {...file}
+                            onPreview={handlePreview}
                             onDownload={handleDownload}
                             onShare={handleShare}
                             onDelete={handleDelete}
@@ -245,6 +288,45 @@ export default function MyFiles() {
                     </div>
                 )}
             </div>
+
+            <Dialog 
+                open={!!previewUrl} 
+                onOpenChange={(open) => {
+                    if (!open) {
+                        if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+                        setPreviewUrl(null);
+                        setPreviewType(null);
+                        setPreviewName(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-w-4xl w-[90vw] max-h-[90vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>{previewName}</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-black/5 dark:bg-white/5 rounded-md min-h-[50vh]">
+                        {previewType === 'image' ? (
+                            <img src={previewUrl!} alt={previewName!} className="max-w-full max-h-full object-contain" />
+                        ) : previewType === 'document' && (previewName?.toLowerCase().endsWith('.pdf') || previewName?.toLowerCase().endsWith('.txt')) ? (
+                            <iframe src={previewUrl!} className="w-full h-full min-h-[70vh] border-0 bg-white" title={previewName!} />
+                        ) : (
+                            <div className="text-center text-muted-foreground">
+                                <p className="mb-4">Preview is not physically supported for this file type.</p>
+                                <Button onClick={() => {
+                                    const a = document.createElement('a');
+                                    a.href = previewUrl!;
+                                    a.download = previewName!;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                }}>
+                                    Download File Instead
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </DashboardLayout>
     );
 }

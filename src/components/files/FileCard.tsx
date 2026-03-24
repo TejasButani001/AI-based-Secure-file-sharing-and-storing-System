@@ -1,4 +1,4 @@
-import { FileText, Image, FileArchive, File, Lock, MoreVertical, Download, Share2, Trash2 } from "lucide-react";
+import { FileText, Image, FileArchive, File, Lock, MoreVertical, Download, Share2, Trash2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ interface FileCardProps {
   size: string;
   uploadedAt: string;
   encrypted: boolean;
+  onPreview?: (fileId: string, fileName: string, type: "document" | "image" | "archive" | "other") => void;
   onDownload?: (fileId: string, fileName: string) => void;
   onShare?: (fileId: string, fileName: string) => void;
   onDelete?: (fileId: string) => void;
@@ -34,7 +35,7 @@ const fileColors = {
   other: "text-muted-foreground bg-muted",
 };
 
-export function FileCard({ id, name, type, size, uploadedAt, encrypted, onDownload, onShare, onDelete }: FileCardProps) {
+export function FileCard({ id, name, type, size, uploadedAt, encrypted, onPreview, onDownload, onShare, onDelete }: FileCardProps) {
   const Icon = fileIcons[type];
 
   return (
@@ -65,6 +66,13 @@ export function FileCard({ id, name, type, size, uploadedAt, encrypted, onDownlo
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="bg-popover border-border">
+            <DropdownMenuItem 
+              className="cursor-pointer"
+              onClick={() => onPreview?.(id, name, type)}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Preview
+            </DropdownMenuItem>
             <DropdownMenuItem 
               className="cursor-pointer"
               onClick={() => onDownload?.(id, name)}
