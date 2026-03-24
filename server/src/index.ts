@@ -112,6 +112,47 @@ const sendRegistrationEmail = async (email: string, username: string, appName: s
     }
 };
 
+const sendPasswordResetEmail = async (email: string, resetLink: string, appName: string) => {
+    try {
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: `Password Reset for ${appName}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+                        <h1 style="color: white; margin: 0;">Password Reset</h1>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+                        <p style="color: #333; font-size: 16px;">Hello,</p>
+                        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+                            We received a request to reset the password for your ${appName} account.
+                        </p>
+                        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+                            Click the button below to reset your password. This link will expire in 15 minutes.
+                        </p>
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="${resetLink}" style="background-color: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Reset Password</a>
+                        </div>
+                        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+                            If you did not request a password reset, you can safely ignore this email.
+                        </p>
+                        <p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 15px;">
+                            Best regards,<br>
+                            <strong>${appName}</strong> Team
+                        </p>
+                    </div>
+                </div>
+            `
+        };
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        console.error('Password reset email error:', error);
+        return false;
+    }
+};
+
 // Multer config: keep files in memory, then persist file bytes in database.
 const storage = multer.memoryStorage();
 // Allowed File Types
@@ -438,6 +479,66 @@ app.post('/api/auth/register', async (req, res): Promise<any> => {
     } catch (error: any) {
         console.error("[REGISTER] Registration error:", error?.message || error);
         res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// Forgot Password API
+app.post('/api/auth/forgot-password', async (req, res): Promise<any> => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    try {
+        const { data: user, error } = await supabase.from('users').select('user_id, email').eq('email', email).single();
+        if (error || !user) {
+            // Return success even if not found to prevent email enumeration
+            return res.json({ message: 'If an account exists, a reset link was sent.' });
+        }
+
+        const resetToken = jwt.sign({ email: user.email, userId: user.user_id, purpose: 'password_reset' }, JWT_SECRET, { expiresIn: '15m' });
+        
+        // Ensure frontend domain is correct (can be configured in env)
+        const origin = req.headers.origin || req.headers.referer;
+        const appDomain = origin ? (origin.endsWith('/') ? origin.slice(0, -1) : origin) : 'http://localhost:8080';
+            
+        const resetLink = `${appDomain}/reset-password?token=${resetToken}`;
+        const appName = process.env.APP_NAME || 'SecureVault';
+        
+        await sendPasswordResetEmail(email, resetLink, appName);
+        res.json({ message: 'If an account exists, a reset link was sent.' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: 'Failed to process request' });
+    }
+});
+
+// Reset Password API
+app.post('/api/auth/reset-password', async (req, res): Promise<any> => {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token and newPassword are required' });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        if (decoded.purpose !== 'password_reset') {
+            return res.status(400).json({ error: 'Invalid token purpose' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const { error } = await supabase.from('users').update({ password_hash: hashedPassword }).eq('email', decoded.email);
+
+        if (error) throw error;
+
+        // Log the event securely
+        await supabase.from('audit_trail').insert({
+            user_id: decoded.userId,
+            event: 'password_reset',
+            details: 'User successfully reset their password via email link',
+            event_time: new Date().toISOString()
+        });
+
+        res.json({ message: 'Password updated successfully' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(400).json({ error: 'Invalid or expired reset token' });
     }
 });
 

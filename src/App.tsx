@@ -17,6 +17,7 @@ import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import FAQ from "./pages/FAQ";
 import MLInfo from "./pages/MLInfo";
 import Contact from "./pages/Contact";
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/faq" element={<FAQ />} />
               <Route path="/ml-info" element={<MLInfo />} />
               <Route path="/contact" element={<Contact />} />
