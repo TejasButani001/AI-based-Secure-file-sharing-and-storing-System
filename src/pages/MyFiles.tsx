@@ -82,14 +82,15 @@ export default function MyFiles() {
 
     const handleDownload = async (fileId: string, fileName: string) => {
         try {
-            const password = window.prompt("Enter your account password to download this file:");
-            if (password === null) {
-                return;
-            }
-
-            if (!password.trim()) {
-                toast({ title: "Error", description: "Password is required to download file", variant: "destructive" });
-                return;
+            let password = sessionStorage.getItem('vaultPassword');
+            if (!password) {
+                const input = window.prompt("Enter your account password to download this file:");
+                if (input === null) return;
+                if (!input.trim()) {
+                    toast({ title: "Error", description: "Password is required to download file", variant: "destructive" });
+                    return;
+                }
+                password = input;
             }
 
             const res = await authFetch(`/api/files/${fileId}/download`, {
@@ -97,6 +98,8 @@ export default function MyFiles() {
                 body: JSON.stringify({ password }),
             });
             if (res.ok) {
+                sessionStorage.setItem('vaultPassword', password);
+
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -108,6 +111,9 @@ export default function MyFiles() {
                 window.URL.revokeObjectURL(url);
                 toast({ title: "Success", description: "File downloaded successfully" });
             } else {
+                if (res.status === 401 || res.status === 403) {
+                    sessionStorage.removeItem('vaultPassword');
+                }
                 let errorMessage = "Failed to download file";
                 try {
                     const errorData = await res.json();
@@ -125,11 +131,15 @@ export default function MyFiles() {
 
     const handlePreview = async (fileId: string, fileName: string, type: string) => {
         try {
-            const password = window.prompt("Enter your account password to preview this file:");
-            if (password === null) return;
-            if (!password.trim()) {
-                toast({ title: "Error", description: "Password is required to preview file", variant: "destructive" });
-                return;
+            let password = sessionStorage.getItem('vaultPassword');
+            if (!password) {
+                const input = window.prompt("Enter your account password to preview this file:");
+                if (input === null) return;
+                if (!input.trim()) {
+                    toast({ title: "Error", description: "Password is required to preview file", variant: "destructive" });
+                    return;
+                }
+                password = input;
             }
 
             const res = await authFetch(`/api/files/${fileId}/download`, {
@@ -137,12 +147,17 @@ export default function MyFiles() {
                 body: JSON.stringify({ password }),
             });
             if (res.ok) {
+                sessionStorage.setItem('vaultPassword', password);
+
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
                 setPreviewUrl(url);
                 setPreviewType(type);
                 setPreviewName(fileName);
             } else {
+                if (res.status === 401 || res.status === 403) {
+                    sessionStorage.removeItem('vaultPassword');
+                }
                 let errorMessage = "Failed to preview file";
                 try {
                     const errorData = await res.json();
