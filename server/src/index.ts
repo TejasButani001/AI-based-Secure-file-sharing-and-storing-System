@@ -407,6 +407,15 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
             login_time: new Date().toISOString()
         });
 
+        if (isValid) {
+            await supabase.from('audit_trail').insert({
+                user_id: user.user_id,
+                event: 'user_login',
+                details: `User logged in from ${ip_address}`,
+                event_time: new Date().toISOString()
+            });
+        }
+
         if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -464,6 +473,13 @@ app.post('/api/auth/register', async (req, res): Promise<any> => {
             console.error(`[REGISTER] Database insert error for ${email}:`, error);
             throw error;
         }
+
+        await supabase.from('audit_trail').insert({
+            user_id: user.user_id,
+            event: 'user_registered',
+            details: `New user registered: ${email}`,
+            event_time: new Date().toISOString()
+        });
 
         console.log(`[REGISTER] User created successfully: ${email} with ID: ${user.user_id}`);
 
@@ -615,11 +631,27 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
             file_data: fileDataBase64
         };
 
+        // Helper function for logging successful upload
+        const logUpload = async () => {
+            try {
+                const { error } = await supabase.from('audit_trail').insert({
+                    user_id: ownerId,
+                    event: 'file_uploaded',
+                    details: `Uploaded file: ${req.file?.originalname}`,
+                    event_time: new Date().toISOString()
+                });
+                if (error) console.error("Audit log error:", error);
+            } catch (e) {
+                console.error("Audit log exception:", e);
+            }
+        };
+
         // If description column exists, save it; otherwise continue without it.
         try {
             insertData.description = description;
             const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
             if (error) throw error;
+            await logUpload();
             return res.json({ message: 'File uploaded successfully', file });
         } catch {
             // Fallback if description column does not exist.
@@ -627,6 +659,7 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
             try {
                 const { data: file, error } = await supabase.from('files').insert(insertData).select().single();
                 if (error) throw error;
+                await logUpload();
                 return res.json({ message: 'File uploaded successfully', file });
             } catch {
                 // Legacy schema fallback: persist base64 payload in encrypted_path when mime/file_data columns are absent.
@@ -646,6 +679,7 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
                     .single();
 
                 if (legacyError) throw legacyError;
+                await logUpload();
                 return res.json({ message: 'File uploaded successfully', file: legacyFile });
             }
         }
@@ -718,6 +752,13 @@ app.post('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest,
                     action: 'download_denied_password',
                     timestamp: new Date().toISOString()
                 });
+
+                await supabase.from('audit_trail').insert({
+                    user_id: req.user.userId,
+                    event: 'access_denied',
+                    details: `Failed password attempt for file ID: ${fileId}`,
+                    event_time: new Date().toISOString()
+                });
             } catch (logError) {
                 console.error('Failed to log denied download:', logError);
             }
@@ -776,6 +817,13 @@ app.post('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest,
                 file_id: fileId,
                 action: 'download',
                 timestamp: new Date().toISOString()
+            });
+
+            await supabase.from('audit_trail').insert({
+                user_id: req.user.userId,
+                event: 'file_downloaded',
+                details: `Downloaded file ID: ${fileId}`,
+                event_time: new Date().toISOString()
             });
         } catch (logError) {
             console.error("Failed to log access:", logError);
