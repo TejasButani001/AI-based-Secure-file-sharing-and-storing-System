@@ -15,9 +15,7 @@ import {
   UserCircle,
   Database,
   FileCheck,
-  Share2,
-  Lock,
-  Server
+  Share2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,13 +37,11 @@ export function Sidebar() {
     { icon: UserCircle, label: "Profile", path: "/profile", roles: ["admin", "user"] },
     // Admin Only
     { icon: Activity, label: "Activity", path: "/activity", roles: ["admin"] },
+    { icon: Bell, label: "Alert Management", path: "/admin-alerts", roles: ["admin"] },
     { icon: Users, label: "Manage Users", path: "/manage-users", roles: ["admin"] },
     { icon: FileCheck, label: "Audit Logs", path: "/audit-logs", roles: ["admin"] },
     { icon: Shield, label: "Access Control", path: "/access-control", roles: ["admin"] },
-    { icon: Lock, label: "Security Settings", path: "/security-settings", roles: ["admin"] },
-    { icon: LayoutDashboard, label: "Admin Dashboard", path: "/admin-dashboard", roles: ["admin"] },
     { icon: Database, label: "DB Monitor", path: "/database-monitor", roles: ["admin"] },
-    { icon: Server, label: "ML Dashboard", path: "/ml-dashboard", roles: ["admin"] },
     { icon: Settings, label: "Settings", path: "/settings", roles: ["admin", "user"] },
   ];
 

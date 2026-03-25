@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { SecurityStatus } from "@/components/dashboard/SecurityStatus";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
+import { RiskStatusBanner } from "@/components/alerts/RiskStatusBanner";
 import { useEffect, useState } from "react";
 
 import { authFetch } from "@/lib/authFetch";
@@ -79,6 +80,9 @@ export default function Dashboard() {
             System overview & recent activity
           </p>
         </div>
+
+        {/* Risk Status Banner */}
+        <RiskStatusBanner />
 
         <div className="space-y-8">
           {/* Stats Grid */}

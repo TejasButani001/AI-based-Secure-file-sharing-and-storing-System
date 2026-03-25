@@ -12,6 +12,7 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 
 import Alerts from "./pages/Alerts";
+import AdminAlerts from "./pages/AdminAlerts";
 import Activity from "./pages/Activity";
 
 import Settings from "./pages/Settings";
@@ -25,11 +26,8 @@ import Contact from "./pages/Contact";
 import MyFiles from "./pages/MyFiles";
 import SharedFiles from "./pages/SharedFiles";
 import AuditLogs from "./pages/AuditLogs";
-import AdminDashboard from "./pages/AdminDashboard";
 import ManageUsers from "./pages/ManageUsers";
 import AccessControl from "./pages/AccessControl";
-import SecuritySettings from "./pages/SecuritySettings";
-import MlDashboard from "./pages/MlDashboard";
 import Profile from "./pages/Profile";
 import DatabaseMonitor from "./pages/DatabaseMonitor";
 
@@ -66,12 +64,10 @@ const App = () => (
 
               {/* Protected Routes - Admin Only */}
               <Route path="/activity" element={<ProtectedRoute allowedRoles={["admin"]}><Activity /></ProtectedRoute>} />
+              <Route path="/admin-alerts" element={<ProtectedRoute allowedRoles={["admin"]}><AdminAlerts /></ProtectedRoute>} />
               <Route path="/manage-users" element={<ProtectedRoute allowedRoles={["admin"]}><ManageUsers /></ProtectedRoute>} />
               <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={["admin"]}><AuditLogs /></ProtectedRoute>} />
               <Route path="/access-control" element={<ProtectedRoute allowedRoles={["admin"]}><AccessControl /></ProtectedRoute>} />
-              <Route path="/security-settings" element={<ProtectedRoute allowedRoles={["admin"]}><SecuritySettings /></ProtectedRoute>} />
-              <Route path="/admin-dashboard" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
-              <Route path="/ml-dashboard" element={<ProtectedRoute allowedRoles={["admin"]}><MlDashboard /></ProtectedRoute>} />
               <Route path="/database-monitor" element={<ProtectedRoute allowedRoles={["admin"]}><DatabaseMonitor /></ProtectedRoute>} />
 
               {/* Legacy/Unused Routes or Catch-all */}

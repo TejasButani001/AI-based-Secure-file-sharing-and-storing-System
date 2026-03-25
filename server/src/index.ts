@@ -10,6 +10,8 @@ import { authMiddleware, adminOnly, AuthRequest } from './middleware';
 import { OAuth2Client } from 'google-auth-library';
 import nodemailer from 'nodemailer';
 import { detectAnomalyOnLogin, getUserBehaviorProfile } from './anomalyDetection';
+import { runLoginAlertChecks, runDownloadAlertChecks } from './alertGenerator';
+import { encryptFile, decryptFile, getMasterKey } from './encryptionUtils';
 
 dotenv.config();
 
@@ -417,6 +419,12 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
         }
 
         if (!isValid) {
+            // Run alert checks for failed login
+            try {
+                await runLoginAlertChecks(user.user_id, String(ip_address));
+            } catch (alertError) {
+                console.error('[LOGIN] Alert check failed (non-critical):', alertError);
+            }
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
@@ -431,6 +439,13 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
         } catch (anomalyError) {
             console.error('[LOGIN] Anomaly detection failed (non-critical):', anomalyError);
             // Continue with login even if anomaly detection fails
+        }
+
+        // Run alert checks for successful login
+        try {
+            await runLoginAlertChecks(user.user_id, String(ip_address));
+        } catch (alertError) {
+            console.error('[LOGIN] Alert check failed (non-critical):', alertError);
         }
 
         // Update last login
@@ -618,7 +633,16 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
 
         const fileSize = req.file.size;
         const mimeType = req.file.mimetype;
-        const fileDataBase64 = req.file.buffer.toString('base64');
+        
+        // ENCRYPTION: Encrypt file data before storing
+        let encryptedData: string;
+        try {
+            encryptedData = encryptFile(req.file.buffer);
+            console.log(`[ENCRYPTION] File encrypted successfully: ${req.file.originalname}`);
+        } catch (encryptError) {
+            console.error('[ENCRYPTION] Failed to encrypt file:', encryptError);
+            return res.status(500).json({ error: 'Failed to encrypt file during upload' });
+        }
 
         const insertData: Record<string, unknown> = {
             file_name: req.file.originalname,
@@ -628,7 +652,7 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
             owner_id: ownerId,
             upload_time: new Date().toISOString(),
             mime_type: mimeType,
-            file_data: fileDataBase64
+            file_data: encryptedData  // Store encrypted data
         };
 
         // Helper function for logging successful upload
@@ -665,7 +689,7 @@ app.post('/api/files/upload', authMiddleware, upload.single('file'), async (req:
                 // Legacy schema fallback: persist base64 payload in encrypted_path when mime/file_data columns are absent.
                 const legacyInsertData: Record<string, unknown> = {
                     file_name: req.file.originalname,
-                    encrypted_path: `db64:${fileDataBase64}`,
+                    encrypted_path: `db64:${encryptedData}`,  // Store encrypted data
                     size: fileSize,
                     checksum: `mime:${mimeType}`,
                     owner_id: ownerId,
@@ -759,6 +783,14 @@ app.post('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest,
                     details: `Failed password attempt for file ID: ${fileId}`,
                     event_time: new Date().toISOString()
                 });
+
+                // Check for unauthorized access attempts
+                try {
+                    const fileIdStr = Array.isArray(fileId) ? fileId[0] : fileId;
+                    await runDownloadAlertChecks(req.user.userId, fileIdStr);
+                } catch (alertError) {
+                    console.error('[DOWNLOAD] Alert check failed (non-critical):', alertError);
+                }
             } catch (logError) {
                 console.error('Failed to log denied download:', logError);
             }
@@ -825,30 +857,51 @@ app.post('/api/files/:fileId/download', authMiddleware, async (req: AuthRequest,
                 details: `Downloaded file ID: ${fileId}`,
                 event_time: new Date().toISOString()
             });
+
+            // Check for excessive downloads
+            try {
+                const fileIdStr = Array.isArray(fileId) ? fileId[0] : fileId;
+                await runDownloadAlertChecks(req.user.userId, fileIdStr);
+            } catch (alertError) {
+                console.error('[DOWNLOAD] Alert check failed (non-critical):', alertError);
+            }
         } catch (logError) {
             console.error("Failed to log access:", logError);
         }
 
-        // Primary path: DB-backed file storage.
+        // Primary path: DB-backed file storage with AES-256 decryption
         if (file.file_data) {
-            const fileBuffer = Buffer.from(file.file_data, 'base64');
-            const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
-            res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
-            return res.send(fileBuffer);
+            try {
+                // DECRYPTION: Decrypt the stored encrypted data
+                const decryptedBuffer = decryptFile(file.file_data);
+                const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+                res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+                console.log(`[DECRYPTION] File decrypted successfully: ${file.file_name}`);
+                return res.send(decryptedBuffer);
+            } catch (decryptError) {
+                console.error('[DECRYPTION] Failed to decrypt file:', decryptError);
+                return res.status(500).json({ error: 'Failed to decrypt file' });
+            }
         }
 
         // Legacy DB-inline fallback: file payload stored inside encrypted_path with db64 prefix.
         if (typeof file.encrypted_path === 'string' && file.encrypted_path.startsWith('db64:')) {
-            const legacyBase64 = file.encrypted_path.slice(5);
-            const fileBuffer = Buffer.from(legacyBase64, 'base64');
-            const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
-            const legacyMime = typeof file.checksum === 'string' && file.checksum.startsWith('mime:')
-                ? file.checksum.slice(5)
-                : 'application/octet-stream';
-            res.setHeader('Content-Type', legacyMime);
-            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
-            return res.send(fileBuffer);
+            try {
+                const legacyEncrypted = file.encrypted_path.slice(5);
+                const decryptedBuffer = decryptFile(legacyEncrypted);
+                const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+                const legacyMime = typeof file.checksum === 'string' && file.checksum.startsWith('mime:')
+                    ? file.checksum.slice(5)
+                    : 'application/octet-stream';
+                res.setHeader('Content-Type', legacyMime);
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+                console.log(`[DECRYPTION] Legacy file decrypted successfully: ${file.file_name}`);
+                return res.send(decryptedBuffer);
+            } catch (decryptError) {
+                console.error('[DECRYPTION] Failed to decrypt legacy file:', decryptError);
+                return res.status(500).json({ error: 'Failed to decrypt file' });
+            }
         }
 
         // Backward compatibility path: legacy rows that stored a filesystem path.
@@ -1455,6 +1508,258 @@ app.get('/api/ml/dashboard', authMiddleware, adminOnly, async (req: AuthRequest,
             error: "Failed to fetch ML dashboard data",
             details: error instanceof Error ? error.message : String(error)
         });
+    }
+});
+
+// GET /api/admin/alerts/search - Admin alert search with filters
+app.get('/api/admin/alerts/search', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        let query = supabase.from('alerts').select('*');
+
+        // Filter by alert type
+        if (req.query.alert_type && req.query.alert_type !== 'all') {
+            query = query.eq('alert_type', req.query.alert_type as string);
+        }
+
+        // Filter by status
+        if (req.query.status && req.query.status !== 'all') {
+            query = query.eq('status', req.query.status as string);
+        }
+
+        // Filter by risk score range
+        if (req.query.min_risk) {
+            query = query.gte('risk_score', parseFloat(req.query.min_risk as string));
+        }
+        if (req.query.max_risk) {
+            query = query.lte('risk_score', parseFloat(req.query.max_risk as string));
+        }
+
+        // Filter by date range
+        if (req.query.start_date) {
+            query = query.gte('created_at', req.query.start_date as string);
+        }
+        if (req.query.end_date) {
+            query = query.lte('created_at', req.query.end_date as string);
+        }
+
+        // Filter by user
+        if (req.query.user_id) {
+            query = query.eq('user_id', parseInt(req.query.user_id as string));
+        }
+
+        // Sorting
+        const sortBy = req.query.sort_by as string || 'created_at';
+        const sortOrder = req.query.sort_order as string || 'desc';
+        query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+
+        // Pagination
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+        const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+        query = query.limit(limit).range(offset, offset + limit - 1);
+
+        const { data: alerts, error, count } = await query;
+
+        if (error) throw error;
+
+        res.json({
+            total: count,
+            limit,
+            offset,
+            alerts: alerts || []
+        });
+    } catch (error) {
+        console.error('Error searching alerts:', error);
+        res.status(500).json({ error: "Failed to search alerts" });
+    }
+});
+
+// GET /api/admin/alerts/stats - Alert statistics
+app.get('/api/admin/alerts/stats', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const days = req.query.days ? parseInt(req.query.days as string) : 30;
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+        // Get all alerts for the period
+        const { data: alerts, error } = await supabase
+            .from('alerts')
+            .select('*')
+            .gte('created_at', since);
+
+        if (error) throw error;
+
+        // Calculate statistics
+        const stats = {
+            total_alerts: alerts?.length || 0,
+            by_status: {
+                open: alerts?.filter((a: any) => a.status === 'open').length || 0,
+                investigating: alerts?.filter((a: any) => a.status === 'investigating').length || 0,
+                resolved: alerts?.filter((a: any) => a.status === 'resolved').length || 0,
+                dismissed: alerts?.filter((a: any) => a.status === 'dismissed').length || 0
+            },
+            by_type: {} as Record<string, number>,
+            by_risk_level: {
+                critical: alerts?.filter((a: any) => a.risk_score >= 8).length || 0,
+                high: alerts?.filter((a: any) => a.risk_score >= 6 && a.risk_score < 8).length || 0,
+                medium: alerts?.filter((a: any) => a.risk_score >= 4 && a.risk_score < 6).length || 0,
+                low: alerts?.filter((a: any) => a.risk_score < 4).length || 0
+            },
+            avg_risk_score: alerts?.length ? 
+                (alerts.reduce((sum, a: any) => sum + (a.risk_score || 0), 0) / alerts.length).toFixed(2) :
+                '0',
+            period_days: days
+        };
+
+        // Count by alert type
+        alerts?.forEach((alert: any) => {
+            const type = alert.alert_type;
+            stats.by_type[type] = (stats.by_type[type] || 0) + 1;
+        });
+
+        res.json(stats);
+    } catch (error) {
+        console.error('Error fetching alert statistics:', error);
+        res.status(500).json({ error: "Failed to fetch statistics" });
+    }
+});
+
+// POST /api/admin/alerts/:alertId/resolve - Mark alert as resolved (admin only)
+app.post('/api/admin/alerts/:alertId/resolve', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const alertId = Array.isArray(req.params.alertId) ? req.params.alertId[0] : req.params.alertId;
+        const { status = 'resolved', resolution_notes } = req.body;
+
+        if (!['open', 'investigating', 'resolved', 'false_alarm', 'dismissed'].includes(status)) {
+            return res.status(400).json({ error: "Invalid status" });
+        }
+
+        // Update alert
+        const { data: updatedAlert, error } = await supabase
+            .from('alerts')
+            .update({
+                status,
+                ...(resolution_notes && { description: resolution_notes }) // Append notes if provided
+            })
+            .eq('alert_id', alertId)
+            .select();
+
+        if (error) throw error;
+        if (!updatedAlert || updatedAlert.length === 0) {
+            return res.status(404).json({ error: "Alert not found" });
+        }
+
+        // Log admin action
+        try {
+            await supabase.from('admin_actions').insert({
+                admin_id: req.user?.userId,
+                action: `Resolved alert ${alertId}`,
+                timestamp: new Date().toISOString()
+            });
+        } catch (logError) {
+            console.error('Failed to log admin action:', logError);
+        }
+
+        res.json({
+            message: "Alert resolved successfully",
+            alert: updatedAlert[0]
+        });
+    } catch (error) {
+        console.error('Error resolving alert:', error);
+        res.status(500).json({ error: "Failed to resolve alert" });
+    }
+});
+
+// DELETE /api/admin/alerts/:alertId - Delete an alert (admin only)
+app.delete('/api/admin/alerts/:alertId', authMiddleware, adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const alertId = Array.isArray(req.params.alertId) ? req.params.alertId[0] : req.params.alertId;
+
+        if (!alertId) {
+            return res.status(400).json({ error: "Alert ID is required" });
+        }
+
+        // First verify the alert exists
+        const { data: existingAlert, error: fetchError } = await supabase
+            .from('alerts')
+            .select('alert_id')
+            .eq('alert_id', alertId)
+            .single();
+
+        if (fetchError || !existingAlert) {
+            return res.status(404).json({ error: "Alert not found" });
+        }
+
+        // Delete alert
+        const { error: deleteError } = await supabase
+            .from('alerts')
+            .delete()
+            .eq('alert_id', alertId);
+
+        if (deleteError) {
+            console.error('Delete error:', deleteError);
+            throw deleteError;
+        }
+
+        // Log admin action
+        try {
+            await supabase.from('admin_actions').insert({
+                admin_id: req.user?.userId,
+                action: `Deleted alert ${alertId}`,
+                timestamp: new Date().toISOString()
+            });
+        } catch (logError) {
+            console.error('Failed to log admin action:', logError);
+        }
+
+        res.json({
+            message: "Alert deleted successfully"
+        });
+    } catch (error) {
+        console.error('Error deleting alert:', error);
+        res.status(500).json({ error: "Failed to delete alert" });
+    }
+});
+
+// GET /api/alerts/check-risk - Get current risk status for user
+app.get('/api/alerts/check-risk', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const userId = req.user.userId;
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+        // Get open alerts for this user in last 24 hours
+        const { data: recentAlerts, error } = await supabase
+            .from('alerts')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'open')
+            .gte('created_at', since)
+            .order('risk_score', { ascending: false });
+
+        if (error) throw error;
+
+        // Calculate risk level
+        let riskLevel = 'low';
+        let highestRisk = 0;
+
+        if (recentAlerts && recentAlerts.length > 0) {
+            highestRisk = recentAlerts[0].risk_score || 0;
+            if (highestRisk >= 8) riskLevel = 'critical';
+            else if (highestRisk >= 6) riskLevel = 'high';
+            else if (highestRisk >= 4) riskLevel = 'medium';
+        }
+
+        res.json({
+            risk_level: riskLevel,
+            highest_risk_score: highestRisk,
+            alert_count: recentAlerts?.length || 0,
+            recent_alerts: recentAlerts || []
+        });
+    } catch (error) {
+        console.error('Error checking user risk:', error);
+        res.status(500).json({ error: "Failed to check risk status" });
     }
 });
 
