@@ -22,15 +22,21 @@ export function deriveKey(password: string, salt: string = 'securevault_salt'): 
 export function getMasterKey(): Buffer {
     const masterKeyEnv = process.env.ENCRYPTION_KEY;
     if (!masterKeyEnv) {
+        console.error('[ENCRYPTION] ENCRYPTION_KEY environment variable not set!');
         throw new Error('ENCRYPTION_KEY environment variable not set');
     }
     
+    console.log(`[ENCRYPTION] ENCRYPTION_KEY length: ${masterKeyEnv.length}, format: ${masterKeyEnv.length === 64 ? 'hex' : 'password'}`);
+    
     // If the key is in hex format (64 chars for 256-bit key)
     if (masterKeyEnv.length === 64) {
-        return Buffer.from(masterKeyEnv, 'hex');
+        const keyBuffer = Buffer.from(masterKeyEnv, 'hex');
+        console.log(`[ENCRYPTION] Master key loaded from hex format (${keyBuffer.length} bytes)`);
+        return keyBuffer;
     }
     
     // Otherwise derive it from the provided password/key
+    console.log(`[ENCRYPTION] Master key derived from password (length: ${masterKeyEnv.length})`);
     return deriveKey(masterKeyEnv);
 }
 
@@ -75,12 +81,21 @@ export function decryptFile(
     encryptionKey?: Buffer
 ): Buffer {
     try {
+        // Validate input
+        if (!encryptedData || typeof encryptedData !== 'string') {
+            throw new Error(`Invalid encrypted data: expected string, got ${typeof encryptedData}`);
+        }
+
+        if (encryptedData.trim() === '') {
+            throw new Error('Encrypted data is empty');
+        }
+
         const key = encryptionKey || getMasterKey();
         
         // Parse the encrypted data (IV:encrypted_data)
         const parts = encryptedData.split(':');
         if (parts.length !== 2) {
-            throw new Error('Invalid encrypted data format');
+            throw new Error(`Invalid encrypted data format: expected 2 parts separated by ':', got ${parts.length} parts. Data starts with: ${encryptedData.substring(0, 100)}`);
         }
         
         const iv = Buffer.from(parts[0], ENCODING);
@@ -88,7 +103,12 @@ export function decryptFile(
         
         // Validate IV length
         if (iv.length !== IV_LENGTH) {
-            throw new Error('Invalid IV length');
+            throw new Error(`Invalid IV length: expected ${IV_LENGTH} bytes, got ${iv.length} bytes`);
+        }
+
+        // Validate encrypted data is not empty
+        if (encrypted.length === 0) {
+            throw new Error('Encrypted payload is empty');
         }
         
         // Create decipher

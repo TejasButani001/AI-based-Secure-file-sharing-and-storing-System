@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, Filter, AlertTriangle, Search, Download, Loader2 } from 'lucide-react';
+import { Bell, Filter, AlertTriangle, Search, Download, Loader2, Lock, LockOpen, History, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,16 @@ interface AlertStats {
   avg_risk_score: string;
 }
 
+interface StatusLog {
+  id: string;
+  user_id: number;
+  action: 'blocked' | 'unblocked';
+  reason: string | null;
+  admin_id: number;
+  timestamp: string;
+  admin_user?: { username: string; email: string };
+}
+
 export default function AdminAlerts() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [stats, setStats] = useState<AlertStats | null>(null);
@@ -42,12 +52,48 @@ export default function AdminAlerts() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterRiskLevel, setFilterRiskLevel] = useState<string>('all');
+  const [blockedUsers, setBlockedUsers] = useState<Set<number>>(new Set());
+  const [blockingUser, setBlockingUser] = useState<number | null>(null);
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [selectedUserForBlock, setSelectedUserForBlock] = useState<number | null>(null);
+  const [blockReason, setBlockReason] = useState('');
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedUserForHistory, setSelectedUserForHistory] = useState<number | null>(null);
+  const [statusHistory, setStatusHistory] = useState<StatusLog[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchAlerts();
     fetchStats();
   }, [filterStatus, filterRiskLevel]);
+
+  useEffect(() => {
+    // Check status of users in alerts
+    const checkAllUserStatuses = async () => {
+      try {
+        const newBlockedUsers = new Set<number>();
+        
+        // Use Promise.all for concurrent status checks
+        const statusPromises = alerts.map(alert => checkUserStatus(alert.user_id));
+        const statuses = await Promise.all(statusPromises);
+        
+        statuses.forEach((isBlocked, index) => {
+          if (isBlocked) {
+            newBlockedUsers.add(alerts[index].user_id);
+          }
+        });
+        
+        setBlockedUsers(newBlockedUsers);
+      } catch (error) {
+        console.error('[UI] Error checking all user statuses:', error);
+      }
+    };
+
+    if (alerts.length > 0) {
+      checkAllUserStatuses();
+    }
+  }, [alerts]);
 
   const fetchAlerts = async () => {
     try {
@@ -160,6 +206,136 @@ export default function AdminAlerts() {
     }
   };
 
+  const checkUserStatus = async (userId: number) => {
+    try {
+      const response = await authFetch(`/api/admin/users/${userId}/status`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.status === 'blocked';
+      }
+    } catch (error) {
+      console.error('Error checking user status:', error);
+    }
+    return false;
+  };
+
+  const handleBlockUser = async (userId: number) => {
+    const isBlocked = blockedUsers.has(userId);
+    
+    if (isBlocked) {
+      // Direct unblock without modal
+      await performBlockAction(userId, null, true);
+    } else {
+      // Show modal to add reason for blocking
+      setSelectedUserForBlock(userId);
+      setBlockReason('');
+      setShowBlockModal(true);
+    }
+  };
+
+  const performBlockAction = async (userId: number, reason: string | null, isUnblock: boolean) => {
+    try {
+      setBlockingUser(userId);
+      const endpoint = isUnblock
+        ? `/api/admin/users/${userId}/unblock`
+        : `/api/admin/users/${userId}/block`;
+
+      console.log(`[UI] ${isUnblock ? 'Unblocking' : 'Blocking'} user ${userId}`);
+
+      const response = await authFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          reason: reason || undefined
+        })
+      });
+
+      const responseData = await response.json();
+      console.log(`[UI] Response:`, responseData);
+
+      if (!response.ok) {
+        throw new Error(responseData?.error || 'Failed to update user status');
+      }
+
+      const newBlockedUsers = new Set(blockedUsers);
+      if (isUnblock) {
+        newBlockedUsers.delete(userId);
+      } else {
+        newBlockedUsers.add(userId);
+      }
+      setBlockedUsers(newBlockedUsers);
+      
+      toast({
+        title: 'Success',
+        description: isUnblock 
+          ? `User ${userId} has been unblocked`
+          : `User ${userId} has been blocked successfully`
+      });
+
+      // Refresh alerts to ensure UI is in sync
+      setTimeout(() => {
+        fetchAlerts();
+      }, 500);
+    } catch (error) {
+      console.error(`[UI] Error ${isUnblock ? 'unblocking' : 'blocking'} user:`, error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update user account status',
+        variant: 'destructive'
+      });
+    } finally {
+      setBlockingUser(null);
+    }
+  };
+
+  const closeBlockModal = () => {
+    setShowBlockModal(false);
+    setBlockReason('');
+    setSelectedUserForBlock(null);
+  };
+
+  const handleSubmitBlock = async () => {
+    if (!selectedUserForBlock) return;
+    
+    await performBlockAction(selectedUserForBlock, blockReason || null, false);
+    closeBlockModal();
+  };
+
+  const fetchStatusHistory = async (userId: number) => {
+    try {
+      setLoadingHistory(true);
+      const response = await authFetch(`/api/admin/users/${userId}/status-history?limit=50`);
+      if (response.ok) {
+        const data = await response.json();
+        setStatusHistory(data.history || []);
+      } else {
+        throw new Error('Failed to fetch history');
+      }
+    } catch (error) {
+      console.error('Error fetching status history:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch block history',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleViewHistory = async (userId: number) => {
+    setSelectedUserForHistory(userId);
+    setShowHistoryModal(true);
+    await fetchStatusHistory(userId);
+  };
+
+  const closeHistoryModal = () => {
+    setShowHistoryModal(false);
+    setSelectedUserForHistory(null);
+    setStatusHistory([]);
+    setLoadingHistory(false);
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('en-US', {
       month: 'short',
@@ -185,8 +361,126 @@ export default function AdminAlerts() {
     );
   }
 
+  // Block Reason Modal
+  const BlockModal = () => (
+    <>
+      {showBlockModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card border rounded-lg p-6 w-96 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Block User {selectedUserForBlock}</h2>
+              <button
+                onClick={closeBlockModal}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium block mb-2">Reason for blocking (optional)</label>
+                <textarea
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  placeholder="e.g., Multiple suspicious login attempts, Violating security policy..."
+                  className="w-full  px-3 py-2 border rounded-lg bg-background text-foreground placeholder-muted-foreground text-sm"
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={closeBlockModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleSubmitBlock}
+                  disabled={blockingUser === selectedUserForBlock}
+                >
+                  {blockingUser === selectedUserForBlock ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Lock className="w-4 h-4 mr-2" />
+                  )}
+                  Block User
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  // History Modal
+  const HistoryModal = () => (
+    <>
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card border rounded-lg p-6 w-2/3 max-h-96 shadow-lg overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <History className="w-5 h-5" />
+                Block/Unblock History - User {selectedUserForHistory}
+              </h2>
+              <button
+                onClick={closeHistoryModal}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {loadingHistory ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : statusHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No block/unblock history found
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {statusHistory.map((log) => (
+                  <div key={log.id} className="border rounded-lg p-3 bg-muted/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          className={log.action === 'blocked' ? 'bg-destructive text-white' : 'bg-green-600 text-white'}
+                        >
+                          {log.action.charAt(0).toUpperCase() + log.action.slice(1)}
+                        </Badge>
+                        <span className="text-sm text-muted-foreground">
+                          {formatDate(log.timestamp)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <p>
+                        <span className="font-medium">Admin:</span> {log.admin_user?.username || `User ${log.admin_id}`} ({log.admin_user?.email})
+                      </p>
+                      {log.reason && (
+                        <p>
+                          <span className="font-medium">Reason:</span> {log.reason}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <DashboardLayout>
+      <BlockModal />
+      <HistoryModal />
       <div className="p-6 lg:p-8">
         {/* Header */}
         <div className="mb-6">
@@ -352,6 +646,36 @@ export default function AdminAlerts() {
                             Dismiss
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewHistory(alert.user_id)}
+                          className="text-xs gap-1"
+                        >
+                          <History className="w-3 h-3" />
+                          History
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={blockedUsers.has(alert.user_id) ? "default" : "destructive"}
+                          onClick={() => handleBlockUser(alert.user_id)}
+                          disabled={blockingUser === alert.user_id}
+                          className="text-xs gap-1"
+                        >
+                          {blockingUser === alert.user_id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : blockedUsers.has(alert.user_id) ? (
+                            <>
+                              <LockOpen className="w-3 h-3" />
+                              Unblock
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="w-3 h-3" />
+                              Block
+                            </>
+                          )}
+                        </Button>
                         <Button
                           size="sm"
                           variant="destructive"

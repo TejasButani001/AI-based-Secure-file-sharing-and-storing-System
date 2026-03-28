@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
 
     // Initial check for token
-    useState(() => {
+    useEffect(() => {
         const token = localStorage.getItem("token");
         if (token) {
             const base64Url = token.split('.')[1];
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
             }
         }
-    });
+    }, []);
 
     // Listen for global unauthorized events
     useEffect(() => {

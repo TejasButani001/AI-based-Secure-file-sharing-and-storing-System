@@ -25,6 +25,7 @@ import Contact from "./pages/Contact";
 
 import MyFiles from "./pages/MyFiles";
 import SharedFiles from "./pages/SharedFiles";
+import SharedFile from "./pages/SharedFile";
 import AuditLogs from "./pages/AuditLogs";
 import ManageUsers from "./pages/ManageUsers";
 import AccessControl from "./pages/AccessControl";
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/faq" element={<FAQ />} />
               <Route path="/ml-info" element={<MLInfo />} />
               <Route path="/contact" element={<Contact />} />
+              <Route path="/share/:token" element={<SharedFile />} />
 
               {/* Protected Routes - Common */}
               <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin", "user"]}><Dashboard /></ProtectedRoute>} />

@@ -37,12 +37,6 @@ export function Navbar() {
               FAQ
             </Link>
             <Link
-              to="/ml-info"
-              className="px-3 py-1.5 rounded-md hover:bg-secondary/50 hover:text-foreground transition-colors"
-            >
-              ML Info
-            </Link>
-            <Link
               to="/contact"
               className="px-3 py-1.5 rounded-md hover:bg-secondary/50 hover:text-foreground transition-colors"
             >
@@ -98,13 +92,6 @@ export function Navbar() {
             onClick={() => setMobileMenuOpen(false)}
           >
             FAQ
-          </Link>
-          <Link
-            to="/ml-info"
-            className="block text-lg font-medium py-2 hover:text-primary transition-colors"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            ML Info
           </Link>
           <Link
             to="/contact"

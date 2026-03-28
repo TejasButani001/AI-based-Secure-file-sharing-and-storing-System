@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FileSharing } from "@/components/FileSharing";
 
 interface FileData {
     id: string;
@@ -49,6 +50,8 @@ export default function MyFiles() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewType, setPreviewType] = useState<string | null>(null);
     const [previewName, setPreviewName] = useState<string | null>(null);
+    const [sharingFileId, setSharingFileId] = useState<string | null>(null);
+    const [sharingFileName, setSharingFileName] = useState<string | null>(null);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -171,18 +174,9 @@ export default function MyFiles() {
         }
     };
 
-    const handleShare = async (fileId: string, fileName: string) => {
-        try {
-            // Create a shareable link - could generate a unique token
-            const shareLink = `${window.location.origin}/shared/${fileId}`;
-            
-            // Copy to clipboard
-            await navigator.clipboard.writeText(shareLink);
-            toast({ title: "Success", description: "Share link copied to clipboard" });
-        } catch (error) {
-            console.error("Share error:", error);
-            toast({ title: "Error", description: "Failed to create share link", variant: "destructive" });
-        }
+    const handleShare = (fileId: string, fileName: string) => {
+        setSharingFileId(fileId);
+        setSharingFileName(fileName);
     };
 
     const handleDelete = async (fileId: string) => {
@@ -342,6 +336,18 @@ export default function MyFiles() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {sharingFileId && sharingFileName && (
+                <FileSharing 
+                    fileId={sharingFileId} 
+                    fileName={sharingFileName}
+                    isOpen={!!sharingFileId}
+                    onClose={() => {
+                        setSharingFileId(null);
+                        setSharingFileName(null);
+                    }}
+                />
+            )}
         </DashboardLayout>
     );
 }

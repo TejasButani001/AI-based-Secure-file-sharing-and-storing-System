@@ -1,11 +1,12 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { supabase } from './supabaseClient';
+import { supabase, supabaseAdmin } from './supabaseClient';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
+import crypto from 'crypto';
 import { authMiddleware, adminOnly, AuthRequest } from './middleware';
 import { OAuth2Client } from 'google-auth-library';
 import nodemailer from 'nodemailer';
@@ -397,6 +398,11 @@ app.post('/api/auth/login', async (req, res): Promise<any> => {
 
         if (error || !user) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Check if user account is blocked
+        if (user.status === 'blocked' || user.status === 'inactive') {
+            return res.status(403).json({ error: 'Your account has been blocked by admin' });
         }
 
         const isValid = await bcrypt.compare(password, user.password_hash);
@@ -967,6 +973,469 @@ app.delete('/api/files/:fileId', authMiddleware, async (req: AuthRequest, res) =
     } catch (error) {
         console.error('Delete error:', error);
         res.status(500).json({ error: 'Deletion failed' });
+    }
+});
+
+// ==================== FILE SHARING ENDPOINTS ====================
+
+// Helper function to generate secure share token
+function generateShareToken() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+// POST /api/files/:fileId/share - Create a shareable link
+app.post('/api/files/:fileId/share', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const fileId = req.params.fileId;
+        const { is_public = false, expiry_days = null } = req.body;
+
+        // Verify file exists and user owns it
+        const { data: file, error: fetchError } = await supabase
+            .from('files')
+            .select('*')
+            .eq('file_id', fileId)
+            .single();
+
+        if (fetchError || !file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Check authorization
+        if (req.user.userId !== file.owner_id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'You can only share your own files' });
+        }
+
+        // Calculate expiry time if provided
+        let expiryTime = null;
+        if (expiry_days && expiry_days > 0) {
+            expiryTime = new Date(Date.now() + expiry_days * 24 * 60 * 60 * 1000).toISOString();
+        }
+
+        // Generate unique share token
+        const shareToken = generateShareToken();
+
+        // Create share record
+        const { data: share, error: createError } = await supabaseAdmin
+            .from('file_shares')
+            .insert({
+                file_id: fileId,
+                owner_id: req.user.userId,
+                share_token: shareToken,
+                is_public,
+                expiry_time: expiryTime
+            })
+            .select()
+            .single();
+
+        if (createError) {
+            console.error('[SHARE] Error creating share:', createError);
+            return res.status(500).json({ error: 'Failed to create share link' });
+        }
+
+        // Log to audit trail
+        try {
+            await supabaseAdmin.from('audit_trail').insert({
+                user_id: req.user.userId,
+                event: 'file_shared',
+                details: `Created share link for file ${file.file_name}. Public: ${is_public}, Expiry: ${expiryTime || 'Never'}`,
+                event_time: new Date().toISOString()
+            });
+        } catch (error) {
+            console.warn('[SHARE] Failed to log audit:', error);
+        }
+
+        res.json({
+            success: true,
+            share: {
+                share_id: share.share_id,
+                share_token: share.share_token,
+                file_name: file.file_name,
+                is_public: share.is_public,
+                expiry_time: share.expiry_time,
+                created_at: share.created_at,
+                share_url: `${process.env.APP_DOMAIN}/share/${share.share_token}`
+            }
+        });
+    } catch (error) {
+        console.error('[SHARE] Unexpected error:', error);
+        res.status(500).json({ error: 'Failed to create share link' });
+    }
+});
+
+// GET /api/share/:token/download - Download file via share token (public access)
+app.get('/api/share/:token/download', async (req: Request, res) => {
+    try {
+        const { token } = req.params;
+
+        // Get share record
+        const { data: share, error: shareError } = await supabase
+            .from('file_shares')
+            .select('*')
+            .eq('share_token', token)
+            .single();
+
+        if (shareError || !share) {
+            return res.status(404).json({ error: 'Share link not found' });
+        }
+
+        // Check if public
+        if (!share.is_public) {
+            return res.status(403).json({ error: 'This share link is private. Authentication required' });
+        }
+
+        // Check if expired
+        if (share.expiry_time && new Date(share.expiry_time) < new Date()) {
+            return res.status(410).json({ error: 'This share link has expired' });
+        }
+
+        // Get file
+        const { data: file, error: fileError } = await supabase
+            .from('files')
+            .select('*')
+            .eq('file_id', share.file_id)
+            .single();
+
+        if (fileError || !file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Log access
+        try {
+            const ipAddress = req.ip || req.socket.remoteAddress || 'unknown';
+            const userAgent = req.get('user-agent') || 'unknown';
+
+            await supabaseAdmin.from('share_access_logs').insert({
+                share_id: share.share_id,
+                file_id: file.file_id,
+                ip_address: ipAddress,
+                user_agent: userAgent,
+                user_id: null  // Anonymous access
+            });
+
+            // Increment access count
+            await supabaseAdmin
+                .from('file_shares')
+                .update({ access_count: (share.access_count || 0) + 1 })
+                .eq('share_id', share.share_id);
+        } catch (logError) {
+            console.warn('[SHARE] Failed to log access:', logError);
+        }
+
+        // Send file download - decrypt from database storage
+        if (file.file_data) {
+            try {
+                console.log(`[SHARE] Attempting to decrypt file_data. Data length: ${file.file_data?.length || 0}, First 50 chars: ${String(file.file_data).substring(0, 50)}`);
+                const decryptedBuffer = decryptFile(file.file_data);
+                const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+                res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+                console.log(`[SHARE] File decrypted and sent: ${file.file_name}`);
+                return res.send(decryptedBuffer);
+            } catch (decryptError) {
+                console.error('[SHARE] Failed to decrypt file:', decryptError);
+                console.error('[SHARE] Decryption error details:', {
+                    error: String(decryptError),
+                    fileDataType: typeof file.file_data,
+                    fileDataLength: String(file.file_data).length,
+                    fileDataSample: String(file.file_data).substring(0, 100)
+                });
+                return res.status(500).json({ error: 'Failed to decrypt file. Check server logs for details.' });
+            }
+        }
+
+        // Legacy fallback - file stored in db64 format in encrypted_path
+        if (typeof file.encrypted_path === 'string' && file.encrypted_path.startsWith('db64:')) {
+            try {
+                const legacyEncrypted = file.encrypted_path.slice(5);
+                const decryptedBuffer = decryptFile(legacyEncrypted);
+                const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+                const legacyMime = typeof file.checksum === 'string' && file.checksum.startsWith('mime:')
+                    ? file.checksum.slice(5)
+                    : 'application/octet-stream';
+                res.setHeader('Content-Type', legacyMime);
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+                return res.send(decryptedBuffer);
+            } catch (decryptError) {
+                console.error('[SHARE] Failed to decrypt legacy file:', decryptError);
+                return res.status(500).json({ error: 'Failed to decrypt file' });
+            }
+        }
+
+        return res.status(404).json({ error: 'File data is not available for download' });
+    } catch (error) {
+        console.error('[SHARE] Download error:', error);
+        res.status(500).json({ error: 'Failed to download file' });
+    }
+});
+
+// POST /api/share/:token/download - Authenticated download of private shared file
+app.post('/api/share/:token/download', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        const { token } = req.params;
+
+        // Get share record
+        const { data: share, error: shareError } = await supabase
+            .from('file_shares')
+            .select('*')
+            .eq('share_token', token)
+            .single();
+
+        if (shareError || !share) {
+            return res.status(404).json({ error: 'Share link not found' });
+        }
+
+        // Check if expired
+        if (share.expiry_time && new Date(share.expiry_time) < new Date()) {
+            return res.status(410).json({ error: 'This share link has expired' });
+        }
+
+        // For private shares, check if user is owner or authorized
+        if (!share.is_public) {
+            if (req.user?.userId !== share.owner_id && req.user?.role !== 'admin') {
+                return res.status(403).json({ error: 'Access denied to this private share' });
+            }
+        }
+
+        // Get file
+        const { data: file, error: fileError } = await supabase
+            .from('files')
+            .select('*')
+            .eq('file_id', share.file_id)
+            .single();
+
+        if (fileError || !file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Log access
+        try {
+            const ipAddress = req.ip || req.socket.remoteAddress || 'unknown';
+            const userAgent = req.get('user-agent') || 'unknown';
+
+            await supabaseAdmin.from('share_access_logs').insert({
+                share_id: share.share_id,
+                file_id: file.file_id,
+                ip_address: ipAddress,
+                user_agent: userAgent,
+                user_id: req.user?.userId || null
+            });
+
+            // Increment access count
+            await supabaseAdmin
+                .from('file_shares')
+                .update({ access_count: (share.access_count || 0) + 1 })
+                .eq('share_id', share.share_id);
+        } catch (logError) {
+            console.warn('[SHARE] Failed to log access:', logError);
+        }
+
+        // Send file download - decrypt from database storage
+        if (file.file_data) {
+            try {
+                console.log(`[SHARE] Authenticated download - Attempting to decrypt file_data. Data length: ${file.file_data?.length || 0}`);
+                const decryptedBuffer = decryptFile(file.file_data);
+                const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+                res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+                console.log(`[SHARE] Authenticated file decrypted and sent: ${file.file_name}`);
+                return res.send(decryptedBuffer);
+            } catch (decryptError) {
+                console.error('[SHARE] Failed to decrypt file for authenticated user:', decryptError);
+                console.error('[SHARE] Decryption error details:', {
+                    error: String(decryptError),
+                    fileDataType: typeof file.file_data,
+                    fileDataLength: String(file.file_data).length,
+                    fileDataSample: String(file.file_data).substring(0, 100)
+                });
+                return res.status(500).json({ error: 'Failed to decrypt file. Check server logs for details.' });
+            }
+        }
+
+        // Legacy fallback - file stored in db64 format in encrypted_path
+        if (typeof file.encrypted_path === 'string' && file.encrypted_path.startsWith('db64:')) {
+            try {
+                const legacyEncrypted = file.encrypted_path.slice(5);
+                const decryptedBuffer = decryptFile(legacyEncrypted);
+                const safeFileName = encodeURIComponent(file.file_name || 'download.bin');
+                const legacyMime = typeof file.checksum === 'string' && file.checksum.startsWith('mime:')
+                    ? file.checksum.slice(5)
+                    : 'application/octet-stream';
+                res.setHeader('Content-Type', legacyMime);
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
+                return res.send(decryptedBuffer);
+            } catch (decryptError) {
+                console.error('[SHARE] Failed to decrypt legacy file:', decryptError);
+                return res.status(500).json({ error: 'Failed to decrypt file' });
+            }
+        }
+
+        return res.status(404).json({ error: 'File data is not available for download' });
+    } catch (error) {
+        console.error('[SHARE] Authenticated download error:', error);
+        res.status(500).json({ error: 'Failed to download file' });
+    }
+});
+
+// GET /api/files/:fileId/shares - List all shares for a file
+app.get('/api/files/:fileId/shares', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const fileId = req.params.fileId;
+
+        // Verify file exists and user owns it
+        const { data: file, error: fileError } = await supabase
+            .from('files')
+            .select('*')
+            .eq('file_id', fileId)
+            .single();
+
+        if (fileError || !file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Check authorization
+        if (req.user.userId !== file.owner_id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Get all shares for this file
+        const { data: shares, error: sharesError } = await supabase
+            .from('file_shares')
+            .select('*')
+            .eq('file_id', fileId)
+            .order('created_at', { ascending: false });
+
+        if (sharesError) {
+            console.error('[SHARE] Error fetching shares:', sharesError);
+            return res.status(500).json({ error: 'Failed to fetch shares' });
+        }
+
+        // Add share URLs
+        const sharesWithUrls = shares.map(share => ({
+            ...share,
+            share_url: `${process.env.APP_DOMAIN}/share/${share.share_token}`,
+            is_expired: share.expiry_time ? new Date(share.expiry_time) < new Date() : false
+        }));
+
+        res.json({
+            file_id: fileId,
+            shares: sharesWithUrls
+        });
+    } catch (error) {
+        console.error('[SHARE] Error listing shares:', error);
+        res.status(500).json({ error: 'Failed to list shares' });
+    }
+});
+
+// DELETE /api/shares/:shareId - Delete a share link
+app.delete('/api/shares/:shareId', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const shareId = req.params.shareId;
+
+        // Get share record
+        const { data: share, error: shareError } = await supabase
+            .from('file_shares')
+            .select('*')
+            .eq('share_id', shareId)
+            .single();
+
+        if (shareError || !share) {
+            return res.status(404).json({ error: 'Share not found' });
+        }
+
+        // Check authorization
+        if (req.user.userId !== share.owner_id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Delete share
+        const { error: deleteError } = await supabaseAdmin
+            .from('file_shares')
+            .delete()
+            .eq('share_id', shareId);
+
+        if (deleteError) {
+            console.error('[SHARE] Error deleting share:', deleteError);
+            return res.status(500).json({ error: 'Failed to delete share' });
+        }
+
+        // Log to audit trail
+        try {
+            await supabaseAdmin.from('audit_trail').insert({
+                user_id: req.user.userId,
+                event: 'share_deleted',
+                details: `Deleted share link for file ${share.file_id}`,
+                event_time: new Date().toISOString()
+            });
+        } catch (error) {
+            console.warn('[SHARE] Failed to log audit:', error);
+        }
+
+        res.json({ success: true, message: 'Share link deleted successfully' });
+    } catch (error) {
+        console.error('[SHARE] Delete error:', error);
+        res.status(500).json({ error: 'Failed to delete share' });
+    }
+});
+
+// GET /api/shares/:shareId/access-logs - View access logs for a share
+app.get('/api/shares/:shareId/access-logs', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const shareId = req.params.shareId;
+        const limit = parseInt(req.query.limit as string) || 50;
+
+        // Get share to verify ownership
+        const { data: share, error: shareError } = await supabase
+            .from('file_shares')
+            .select('*')
+            .eq('share_id', shareId)
+            .single();
+
+        if (shareError || !share) {
+            return res.status(404).json({ error: 'Share not found' });
+        }
+
+        // Check authorization
+        if (req.user.userId !== share.owner_id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Get access logs
+        const { data: logs, error: logsError } = await supabase
+            .from('share_access_logs')
+            .select('*')
+            .eq('share_id', shareId)
+            .order('accessed_at', { ascending: false })
+            .limit(limit);
+
+        if (logsError) {
+            console.error('[SHARE] Error fetching access logs:', logsError);
+            return res.status(500).json({ error: 'Failed to fetch access logs' });
+        }
+
+        res.json({
+            share_id: shareId,
+            total_accesses: share.access_count || 0,
+            logs: logs || []
+        });
+    } catch (error) {
+        console.error('[SHARE] Error getting logs:', error);
+        res.status(500).json({ error: 'Failed to fetch access logs' });
     }
 });
 
@@ -1760,6 +2229,257 @@ app.get('/api/alerts/check-risk', authMiddleware, async (req: AuthRequest, res) 
     } catch (error) {
         console.error('Error checking user risk:', error);
         res.status(500).json({ error: "Failed to check risk status" });
+    }
+});
+
+// ==================== USER ACCOUNT BLOCKING ====================
+
+// Block a user account
+app.post('/api/admin/users/:userId/block', authMiddleware, adminOnly, async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+        const userIdParam = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        const userId = parseInt(userIdParam);
+        const { reason } = req.body;
+        const adminId = req.user?.userId;
+
+        // Validate inputs
+        if (isNaN(userId)) {
+            return res.status(400).json({ error: 'Invalid user ID' });
+        }
+        if (!adminId) {
+            return res.status(401).json({ error: 'Admin ID not found' });
+        }
+
+        console.log(`[BLOCK] Admin ${adminId} attempting to block user ${userId} with reason: ${reason}`);
+
+        // First verify user exists
+        const { data: existingUser, error: checkError } = await supabaseAdmin
+            .from('users')
+            .select('user_id, status')
+            .eq('user_id', userId)
+            .single();
+
+        if (checkError || !existingUser) {
+            console.error('[BLOCK] User not found:', checkError);
+            return res.status(400).json({ error: 'User not found' });
+        }
+
+        // Update user status to blocked
+        const { data, error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({ status: 'blocked' })
+            .eq('user_id', userId)
+            .select()
+            .single();
+
+        if (updateError || !data) {
+            console.error('[BLOCK] Error updating user status:', updateError);
+            return res.status(400).json({ error: 'Failed to block user' });
+        }
+
+        console.log('[BLOCK] User status updated successfully:', data);
+
+        // Log in user_status_logs table (non-critical)
+        try {
+            const { error: logError } = await supabaseAdmin.from('user_status_logs').insert({
+                user_id: userId,
+                action: 'blocked',
+                reason: reason || null,
+                admin_id: adminId,
+                timestamp: new Date().toISOString()
+            });
+            if (logError) {
+                console.warn('[BLOCK] Warning - could not log to user_status_logs:', logError);
+            } else {
+                console.log('[BLOCK] Logged to user_status_logs');
+            }
+        } catch (logError) {
+            console.warn('[BLOCK] Warning - could not log to user_status_logs:', logError);
+        }
+
+        // Log to audit trail (non-critical)
+        try {
+            const { error: auditError } = await supabaseAdmin.from('audit_trail').insert({
+                user_id: adminId,
+                event: 'user_blocked',
+                details: `Admin blocked user ${userId}. Reason: ${reason || 'No reason provided'}`,
+                event_time: new Date().toISOString()
+            });
+            if (auditError) {
+                console.warn('[BLOCK] Warning - could not log to audit_trail:', auditError);
+            } else {
+                console.log('[BLOCK] Logged to audit_trail');
+            }
+        } catch (auditError) {
+            console.warn('[BLOCK] Warning - could not log to audit_trail:', auditError);
+        }
+
+        res.json({ 
+            success: true, 
+            message: `User ${userId} has been blocked successfully`,
+            user: data
+        });
+    } catch (error) {
+        console.error('[BLOCK] Unexpected error:', error);
+        res.status(500).json({ error: 'Failed to block user' });
+    }
+});
+
+// Unblock a user account
+app.post('/api/admin/users/:userId/unblock', authMiddleware, adminOnly, async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+        const userIdParam = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        const userId = parseInt(userIdParam);
+        const adminId = req.user?.userId;
+
+        // Validate inputs
+        if (isNaN(userId)) {
+            return res.status(400).json({ error: 'Invalid user ID' });
+        }
+        if (!adminId) {
+            return res.status(401).json({ error: 'Admin ID not found' });
+        }
+
+        console.log(`[UNBLOCK] Admin ${adminId} attempting to unblock user ${userId}`);
+
+        // First verify user exists
+        const { data: existingUser, error: checkError } = await supabaseAdmin
+            .from('users')
+            .select('user_id, status')
+            .eq('user_id', userId)
+            .single();
+
+        if (checkError || !existingUser) {
+            console.error('[UNBLOCK] User not found:', checkError);
+            return res.status(400).json({ error: 'User not found' });
+        }
+
+        // Update user status to active
+        const { data, error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({ status: 'active' })
+            .eq('user_id', userId)
+            .select()
+            .single();
+
+        if (updateError || !data) {
+            console.error('[UNBLOCK] Error updating user status:', updateError);
+            return res.status(400).json({ error: 'Failed to unblock user' });
+        }
+
+        console.log('[UNBLOCK] User status updated successfully:', data);
+
+        // Log in user_status_logs table (non-critical)
+        try {
+            const { error: logError } = await supabaseAdmin.from('user_status_logs').insert({
+                user_id: userId,
+                action: 'unblocked',
+                reason: null,
+                admin_id: adminId,
+                timestamp: new Date().toISOString()
+            });
+            if (logError) {
+                console.warn('[UNBLOCK] Warning - could not log to user_status_logs:', logError);
+            } else {
+                console.log('[UNBLOCK] Logged to user_status_logs');
+            }
+        } catch (logError) {
+            console.warn('[UNBLOCK] Warning - could not log to user_status_logs:', logError);
+        }
+
+        // Log to audit trail (non-critical)
+        try {
+            const { error: auditError } = await supabaseAdmin.from('audit_trail').insert({
+                user_id: adminId,
+                event: 'user_unblocked',
+                details: `Admin unblocked user ${userId}`,
+                event_time: new Date().toISOString()
+            });
+            if (auditError) {
+                console.warn('[UNBLOCK] Warning - could not log to audit_trail:', auditError);
+            } else {
+                console.log('[UNBLOCK] Logged to audit_trail');
+            }
+        } catch (auditError) {
+            console.warn('[UNBLOCK] Warning - could not log to audit_trail:', auditError);
+        }
+
+        res.json({ 
+            success: true, 
+            message: `User ${userId} has been unblocked successfully`,
+            user: data
+        });
+    } catch (error) {
+        console.error('[UNBLOCK] Unexpected error:', error);
+        res.status(500).json({ error: 'Failed to unblock user' });
+    }
+});
+
+// Get user status
+app.get('/api/admin/users/:userId/status', authMiddleware, adminOnly, async (req: AuthRequest, res: Response): Promise<any> => {
+    const userId = String(req.params.userId);
+
+    try {
+        const { data, error } = await supabase
+            .from('users')
+            .select('user_id, email, username, status, role')
+            .eq('user_id', parseInt(userId))
+            .single();
+
+        if (error) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json(data);
+    } catch (error) {
+        console.error('Error fetching user status:', error);
+        res.status(500).json({ error: 'Failed to fetch user status' });
+    }
+});
+
+// Get user block/unblock history
+app.get('/api/admin/users/:userId/status-history', authMiddleware, adminOnly, async (req: AuthRequest, res: Response): Promise<any> => {
+    const userId = String(req.params.userId);
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    try {
+        const { data: logs, error } = await supabaseAdmin
+            .from('user_status_logs')
+            .select(`
+                id,
+                user_id,
+                action,
+                reason,
+                admin_id,
+                timestamp,
+                admin_user:admin_id(user_id, username, email)
+            `)
+            .eq('user_id', parseInt(userId))
+            .order('timestamp', { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            // If table doesn't exist yet, return empty history
+            console.warn('Note: user_status_logs table may not exist yet. Error:', error.message);
+            return res.json({ 
+                user_id: parseInt(userId),
+                history: [],
+                note: 'Status history table not yet created. Run schema migration in Supabase.'
+            });
+        }
+
+        res.json({ 
+            user_id: parseInt(userId),
+            history: logs || []
+        });
+    } catch (error) {
+        console.error('Error fetching user status history:', error);
+        // Return empty history on error instead of failing
+        res.json({ 
+            user_id: parseInt(userId),
+            history: [],
+            note: 'Could not fetch history. Table may not exist.'
+        });
     }
 });
 
